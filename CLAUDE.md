@@ -56,10 +56,13 @@ You are working on **Bound Lending** — a BTC-collateralized, fixed-term, fixed
 - [x] Queue processor (price polling, chain polling, expiry checks)
 - [x] Guards (JwtAuth), decorators (@Public), interceptors, exception filter
 
-### Phase 5 — Frontend
-- [ ] Next.js app in `fe/`
-- [ ] Borrow flow (3-step: RFQ → Offers → Sign)
-- [ ] Active loans dashboard
+### Phase 5 — Frontend ✅
+- [x] Next.js app in `fe/` with Tailwind, dark/light theme
+- [x] Borrow flow (3-step: RFQ → Offers → Sign PSBT)
+- [x] Active loans table (sortable)
+- [x] Components: TopNav, LtvGauge, StepIndicator, OfferCard, ActiveLoansTable
+- [x] API client (`fe/src/lib/api.ts`) with all endpoints
+- [x] TypeScript types matching BE schemas
 
 ## Key Business Rules
 

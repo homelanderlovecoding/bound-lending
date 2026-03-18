@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --gold-dark: #E59A00;
+  --gold: #FFB700;
+  --gold-light: #FFB700;
+  --green-deep: #7A8F6A;
+  --green: #7A8F6A;
+  --green-soft: #9AB08A;
+  --parchment: #F3F3F3;
+  --red-soft: #C94B3B;
+  --red-text: #C94B3B;
+  --bg-primary: #0E0F10;
+  --bg-secondary: #141517;
+  --bg-tertiary: #17191C;
+  --border: #2A2C30;
+  --border-light: #3A3D42;
+  --text-primary: #F3F3F3;
+  --text-secondary: #B9B9B9;
+  --text-muted: #7D8087;
+}
+
+.light {
+  --bg-primary: #F7F7F7;
+  --bg-secondary: #FFFFFF;
+  --bg-tertiary: #F7F7F7;
+  --border: #E8E8E8;
+  --border-light: #D3D4D1;
+  --text-primary: #262626;
+  --text-secondary: #5B5B5B;
+  --text-muted: #A6A6A6;
+}
+
+body {
+  font-family: 'DM Sans', 'Inter', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* LTV gauge arc */
+.ltv-ring {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: conic-gradient(var(--border) 0deg, var(--border) 270deg, transparent 270deg);
+  transform: rotate(135deg);
+}
+
+.ltv-ring-inner {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+}
+
+/* Range slider */
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--gold-dark);
+  border: 2px solid var(--bg-secondary);
+  cursor: pointer;
+  margin-top: -1px;
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--gold-dark);
+  border: 2px solid var(--bg-secondary);
+  cursor: pointer;
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
