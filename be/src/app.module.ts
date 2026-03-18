@@ -13,6 +13,11 @@ import {
 import { ENV_REGISTER } from './commons/constants';
 import { IDatabaseConfig } from './commons/types';
 import { EscrowModule } from './modules/escrow';
+import { AuthModule } from './modules/auth/auth.module';
+import { UserModule } from './modules/user/user.module';
+import { RfqModule } from './modules/rfq/rfq.module';
+import { LoanModule } from './modules/loan/loan.module';
+import { PriceFeedModule } from './modules/price-feed/price-feed.module';
 
 @Module({
   imports: [
@@ -36,6 +41,11 @@ import { EscrowModule } from './modules/escrow';
 
     // Feature Modules
     EscrowModule,
+    AuthModule,
+    UserModule,
+    RfqModule,
+    LoanModule,
+    PriceFeedModule,
   ],
 })
 export class AppModule {}
