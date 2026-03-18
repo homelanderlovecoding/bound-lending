@@ -38,12 +38,14 @@ You are working on **Bound Lending** — a BTC-collateralized, fixed-term, fixed
 
 ## What's Next
 
-### Phase 2 — API + State Machine
-- [ ] Auth module (JWT, Trading Wallet challenge/verify)
-- [ ] User module (CRUD, lender whitelist)
-- [ ] RFQ module (create, offers, accept)
-- [ ] Loan module (9-state machine, lifecycle)
-- [ ] API routes (all endpoints from README.md)
+### Phase 2 — API + State Machine ✅
+- [x] Auth module (JWT, Trading Wallet challenge/verify)
+- [x] User module (CRUD, lender whitelist)
+- [x] RFQ module (create, offers, accept, cancel)
+- [x] Loan module (9-state machine, lifecycle, repayment calc)
+- [x] Price feed module (BTC price, oracle differential check)
+- [x] Dashboard controller (summary, loan list)
+- [x] API routes (auth, rfqs, loans, dashboard, price, config)
 
 ### Phase 3 — Liquidation + Indexer
 - [ ] Price feed module (5 sources, oracle differential check ≤0.25%)
