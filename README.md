@@ -250,16 +250,16 @@ POST /auth/refresh            # Refresh token
 
 ### RFQ (Borrower)
 ```
-POST   /rfqs                  # Create RFQ { amount_usd, term_days }
+POST   /rfqs                  # Create RFQ { collateral_btc, amount_usd, term_days }
 GET    /rfqs/:id              # RFQ detail + offers
 POST   /rfqs/:id/accept       # Accept offer { offerId }
 DELETE /rfqs/:id              # Cancel RFQ
 ```
 
-### RFQ (Lender)
+### RFQ (Lender — whitelisted only)
 ```
 GET    /rfqs/feed             # Subscribe to RFQ stream (WS upgrade)
-POST   /rfqs/:id/offers       # Submit offer { collateral_btc, rate_apr }
+POST   /rfqs/:id/offers       # Submit offer { rate_apr }
 DELETE /rfqs/:id/offers/:oid  # Withdraw offer
 ```
 
@@ -306,9 +306,8 @@ GET    /internal/price-feeds            # Current price feed status
 ├────────────────────────────────────────────────┤
 │                                                 │
 │  1. Price Poller (every 60s)                    │
-│     → Query 5 feeds (CMC, CG, Binance,         │
-│       Hyperliquid, TBD)                         │
-│     → Take MEDIAN (resilient to outliers)       │
+│     → Query 5 feeds (dev decision on sources)   │
+│     → Mix of aggregators + exchange APIs        │
 │     → Require ≥ 3/5 feeds responsive            │
 │     → Cache in Redis                            │
 │                                                 │
@@ -316,20 +315,19 @@ GET    /internal/price-feeds            # Current price feed status
 │     → For each ACTIVE + GRACE loan:             │
 │       ltv = debt / (collateral × btc_price)     │
 │       debt = principal + fee + accrued_interest  │
-│     → If ltv ≥ 95%: flag IN_DANGER              │
+│     → If ltv ≥ 95%: trigger liquidation check   │
 │                                                 │
-│  3. Confirmation Window (15-min timer)          │
-│     → After IN_DANGER flag:                     │
-│       schedule recheck at T+15min               │
-│     → Re-query all 5 feeds                      │
-│     → Recalculate LTV                           │
-│     → If still ≥ 95%:                           │
-│       - collateral < 0.20 BTC: auto-liquidate   │
-│       - collateral ≥ 0.20 BTC: manual review    │
-│         + Discord alert                         │
-│     → If recovered < 95%: clear flag            │
+│  3. Oracle Differential Check                   │
+│     → Compare all 5 feed prices                 │
+│     → Max diff between any two feeds ≤ 0.25%?   │
+│       YES → proceed to execution                │
+│       NO  → wait 5 min, re-query all feeds      │
+│             repeat until ≤ 0.25% or LTV < 95%   │
+│     → If collateral ≥ 0.20 BTC: manual review   │
+│       + Discord alert before execution           │
 │                                                 │
 │  4. Execution                                   │
+│     → Oracle check passed + LTV still ≥ 95%     │
 │     → Retrieve pre-signed liquidation PSBT      │
 │     → Bound co-signs                            │
 │     → Broadcast                                 │
@@ -387,6 +385,7 @@ rfq:new                   { rfqId, amount, term }
   pubkey: Buffer,
   roles: ["borrower", "lender"],
   tradingWalletId: String,
+  isWhitelistedLender: Boolean,  // Manual approval required to lend
   createdAt: Date
 }
 ```
@@ -396,15 +395,16 @@ rfq:new                   { rfqId, amount, term }
 {
   _id: ObjectId,
   borrower: ObjectId,
-  amountUsd: Decimal128,
+  collateralBtc: Decimal128,    // BTC amount borrower offers as collateral
+  amountUsd: Decimal128,         // Loan amount requested (creates implied LTV)
+  impliedLtv: Number,           // Calculated: amountUsd / (collateralBtc * btcPrice)
   termDays: Number,
   status: "open" | "offers_received" | "selected" | "cancelled" | "expired",
   offers: [{
     _id: ObjectId,
     lender: ObjectId,
     lenderPubkey: Buffer,
-    collateralBtc: Decimal128,
-    rateApr: Number,
+    rateApr: Number,             // Only field lender sets
     status: "pending" | "accepted" | "withdrawn",
     createdAt: Date
   }],
@@ -523,7 +523,7 @@ events:      { loanId: 1, timestamp: -1 }
 | `loan:grace-expiry` | Per loan, at graceExpiresAt | GRACE → DEFAULTED |
 | `price:poll` | Repeating, every 60s | Fetch 5 feeds, cache median |
 | `ltv:scan` | On every price update | Check all active loans |
-| `ltv:recheck` | Per loan, 15min after IN_DANGER | Confirmation window |
+| `ltv:oracle-check` | Per loan, on LTV breach | Oracle differential check (retry every 5 min if >0.25%) |
 | `loan:notify-borrower` | Per event | Grace warning, in-danger, liquidation |
 | `review:discord-alert` | On ≥0.20 BTC trigger | Post to Discord for manual review |
 
@@ -536,12 +536,12 @@ events:      { loanId: 1, timestamp: -1 }
 | Bound offline (active loan) | Path 3: Borrower + Lender can cooperate directly |
 | Bound offline (forfeiture) | Lender stuck → Bound HA infra, redundant signing |
 | Price feed failure | Min 3/5 feeds required, defer liquidation if fewer |
-| Premature liquidation | 15-min confirmation window, two separate checks |
+| Premature liquidation | Oracle differential check (≤0.25% between feeds), retry every 5 min |
 | Chain reorg | Wait N confirmations before state transitions |
 | Partial bUSD on repayment | Reject — no partial repay in v1 |
 | Large collateral seizure | Manual review ≥ 0.20 BTC + Discord alert |
 | Origination timeout | Cancel cleanly, no risk (unsigned PSBT) |
-| Fake lender offers | Trading Wallet balance check + rate limiting |
+| Fake lender offers | Lender whitelisting + Trading Wallet balance check |
 | Bound + Lender collusion | Residual risk — documented in trust model |
 
 ---
@@ -553,7 +553,8 @@ events:      { loanId: 1, timestamp: -1 }
 | `origination_fee_pct` | TBD | Awaiting business decision |
 | `grace_period_days` | 7 | Confirmed |
 | `liquidation_ltv_pct` | 95% | Confirmed |
-| `liquidation_confirmation_minutes` | 15 | Confirmed |
+| `oracle_differential_threshold_pct` | 0.25% | Confirmed |
+| `oracle_retry_wait_seconds` | 300 | Confirmed |
 | `min_price_feeds_required` | TBD | Needs engineering input |
 | `rfq_expiry_seconds` | TBD | Needs product input |
 | `origination_signing_timeout_seconds` | TBD | Needs product input |

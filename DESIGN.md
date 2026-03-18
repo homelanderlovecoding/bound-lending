@@ -26,7 +26,7 @@
 | DB | MongoDB | Flexible loan/RFQ schema, easy to iterate |
 | Cache/Queue | Redis + BullMQ | Timer jobs, price cache, PSBT expiry |
 | Realtime | WebSocket (ws) | RFQ feed + loan events |
-| Price Feeds | CoinMarketCap, CoinGecko, Binance, Hyperliquid, +1 TBD | 5-source median for liquidation |
+| Price Feeds | 5 sources (dev decision — mix aggregators + exchange APIs) | Oracle differential check for liquidation |
 | Bitcoin | bitcoinjs-lib + Bitcoin Core RPC + mempool.space | Multisig, PSBT, chain monitoring |
 | Frontend | Next.js | Borrower UI + lender dashboard |
 | Wallet | Bound Trading Wallet SDK | Required — no external wallets |
@@ -225,11 +225,11 @@ GET    /internal/price-feeds
 
 ## 8. Liquidation Engine
 
-1. Price Poller (every 60s) → 5 feeds → MEDIAN → require ≥3/5
-2. LTV Scanner → check all ACTIVE + GRACE loans
-3. 15-min Confirmation Window → recheck before execution
+1. Price Poller (every 60s) → 5 feeds (dev choice, mix of aggregators + exchanges) → require ≥3/5
+2. LTV Scanner → check all ACTIVE + GRACE loans → flag if ≥ 95%
+3. Oracle Differential Check → max diff between any two feeds ≤ 0.25% → if not, retry every 5 min
 4. Manual review for ≥ 0.20 BTC collateral + Discord alert
-5. Execute: co-sign pre-signed PSBT → broadcast
+5. Execute: oracle check passed + LTV still ≥ 95% → co-sign pre-signed PSBT → broadcast
 
 ---
 

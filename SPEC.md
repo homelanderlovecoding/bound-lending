@@ -10,31 +10,7 @@
 
 ---
 
-## **2\. Definitions & Terminology**
-
-### **Terms**
-
-| Term | Definition |
-| ----- | ----- |
-| RFQ (Request for Quote) | A borrower-initiated request broadcast to lenders specifying desired loan amount and term length. |
-| Loan Term | The agreed duration of the loan, starting from origination PSBT confirmation on-chain, in days. |
-| Grace Period | A fixed window, in days, (see Configuration Parameters) after the stated loan term expires during which the borrower may still repay. After the grace period, Bound \+ Lender may claim collateral. |
-| Liquidation Threshold | The LTV percentage at which Bound initiates liquidation of the borrower's collateral. Set at 95% LTV — the remaining 5% serves as an implied penalty. |
-| Origination PSBT | The partially-signed Bitcoin transaction that atomically executes the loan: transfers bUSD from lender to borrower, locks BTC in the 2-of-3 multisig, and routes the origination fee to Bound. |
-| Repayment PSBT | The partially-signed Bitcoin transaction that closes the loan: returns BTC to the borrower and transfers bUSD principal \+ interest to the lender. |
-| Liquidation PSBT | A pre-signed PSBT created at origination that transfers 100% of BTC collateral to the lender. Lender signs at origination; Bound holds and co-signs only if the liquidation threshold is breached. |
-
-### **Roles**
-
-| Role | Description |
-| ----- | ----- |
-| Borrower | Deposits BTC collateral, receives stablecoin loan, may repay to reclaim BTC. Must operate from a Bound Trading Wallet. |
-| Lender | Provides bUSD liquidity, sets LTV and interest rate per RFQ, receives repayment or claims collateral on default. Integrates via API. Must operate from a Bound Trading Wallet. |
-| Bound | Coordinates PSBT construction, co-signs transactions, collects origination fees. Acts as a neutral third party — cannot move funds unilaterally. |
-
----
-
-## **3\. Loan Lifecycle**
+## **2\. Loan Lifecycle**
 
 ### **State Machine**
 
@@ -80,21 +56,24 @@
 | Origination Pending | Active Loan | All three parties sign; PSBT confirmed on-chain | System (blockchain confirmation) |
 | Origination Pending | Cancelled | Any party fails to sign within timeout | System |
 | Active Loan | Repaid | Repayment PSBT confirmed on-chain | Borrower \+ (Bound or Lender) |
-| Active Loan | Liquidated | LTV breaches liquidation threshold | Bound (co-signs pre-signed liquidation PSBT) |
+| Active Loan | Liquidated | Bound co-signs the pre-signed liquidation PSBT because LTV breaches liquidation threshold | Bound (co-signs pre-signed liquidation PSBT) |
 | Active Loan | Grace Period | Loan term expires | System (time-based) |
 | Grace Period | Repaid | Repayment PSBT confirmed on-chain | Borrower \+ (Bound or Lender) |
-| Grace Period | Liquidated | LTV breaches liquidation threshold | Bound (co-signs pre-signed liquidation PSBT) |
+| Grace Period | Liquidated | Bound co-signs the pre-signed liquidation PSBT because LTV breaches liquidation threshold | Bound (co-signs pre-signed liquidation PSBT) |
 | Grace Period | Defaulted | Grace period expires without repayment | System |
 | Defaulted | Forfeited | Collateral is transferred to lender | Lender \+ Bound |
 
 ---
 
-## **4\. RFQ System**
+## **3\. RFQ System**
 
 ### **Borrower Flow**
 
-1. Borrower specifies: loan amount (denominated in USD) and loan term (in days).  
-2. System validates the borrower has sufficient BTC balance in their Trading Wallet to potentially collateralize the request (at \~50% LTV).  
+1. Borrower specifies:  
+   * **BTC collateral amount** — the amount of BTC they are offering as collateral  
+   * **Loan amount** (denominated in USD) — the amount they want to borrow, creating an implied LTV  
+   * **Loan term** in days  
+2. The system validates the borrower has sufficient BTC balance in their Trading Wallet to cover the specified collateral amount.  
 3. RFQ is broadcast to all connected lenders.  
 4. Borrower receives offers as they arrive and may select one at any time.  
 5. If no offers arrive before the RFQ expiry window, the RFQ closes.
@@ -102,16 +81,15 @@
 ### **Lender Flow**
 
 1. Lender subscribes to the RFQ feed via API.  
-2. When an RFQ arrives, lender evaluates and may respond with:  
-   * **Collateral required** (expressed as BTC amount or LTV ratio)  
+2. When an RFQ arrives, lender sees the borrower's collateral amount, requested loan amount, implied LTV, and term. Lender may respond with:  
    * **Interest rate** (annual percentage rate)  
 3. The offer is delivered to the borrower in real-time.  
 4. If the borrower selects this lender's offer, the system notifies the lender and transitions to origination.
 
 ### **Requirements**
 
+* Lenders must be whitelisted by Bound before they can subscribe to the RFQ feed or submit offers. Lending is not permissionless.  
 * The RFQ system must support multiple simultaneous lenders responding to the same RFQ.  
-* Offers must be delivered to the borrower in real-time (low-latency).  
 * A lender's offer is binding once submitted — the lender must be prepared to fund the loan if selected. (We could require lenders to propose a PSBT in their response perhaps)  
 * The system must handle RFQ expiry and clean up stale RFQs.
 
@@ -119,7 +97,7 @@
 
 ---
 
-## **5\. Loan Origination (PSBT Construction)**
+## **4\. Loan Origination (PSBT Construction)**
 
 ### **Overview**
 
@@ -145,29 +123,31 @@ The BTC collateral is locked in a 2-of-3 multisig. Any two of the three signers 
 
 ### **Origination Flow**
 
-1. **Borrower selects an offer** — system captures: loan amount, BTC collateral amount, interest rate, term length, lender identity.  
-2. **Bound constructs the origination PSBT** — includes all inputs (lender's bUSD UTXO, borrower's BTC UTXO) and outputs (bUSD to borrower, bUSD fee to Bound, BTC to 2-of-3 multisig address).  
-3. **Bound constructs the liquidation PSBT** — a separate PSBT that transfers 100% of the collateral from the multisig to the lender's address. This PSBT is created now but only broadcast if liquidation is triggered.  
-4. **Lender pre-signs the liquidation PSBT** — the lender signs the liquidation PSBT at origination. Bound holds this partially-signed PSBT and will only add its own signature if the liquidation threshold is breached.  
-5. **Borrower reviews and signs the origination PSBT** — borrower verifies the PSBT details match the agreed terms before signing.  
-6. **Lender signs the origination PSBT** — lender verifies and co-signs.  
-7. **Bound signs the origination PSBT** — Bound verifies all parties have signed correctly, then adds its signature.  
-8. **Origination PSBT is broadcast** — once all signatures are collected, the fully-signed transaction is broadcast to the Bitcoin network.  
-9. **Confirmation** — the loan becomes Active once the transaction is confirmed on-chain. Bound begins LTV monitoring.
+1. **Borrower submits an RFQ and Lenders respond with offers** — see RFQ System   
+2. **Borrower selects an offer** — system captures: loan amount, BTC collateral amount, interest rate, term length, lender identity.  
+3. **Bound constructs the origination PSBT** — includes all inputs (lender's bUSD UTXO, borrower's BTC UTXO) and outputs (bUSD to borrower, bUSD fee to Bound, BTC to 2-of-3 multisig address).  
+4. **Bound constructs the liquidation PSBT** — a separate PSBT that transfers 100% of the collateral from the multisig to the lender's address. This PSBT is created now but only broadcast if liquidation is triggered.  
+5. **Lender pre-signs the liquidation PSBT** — the lender signs the liquidation PSBT at origination. Bound holds this partially-signed PSBT and will only add its own signature if the liquidation threshold is breached.  
+6. **Borrower reviews and signs the origination PSBT** — borrower verifies the PSBT details match the agreed terms before signing.  
+7. **Lender signs the origination PSBT** — lender verifies and co-signs.  
+8. **Bound signs the origination PSBT** — Bound verifies all parties have signed correctly, then adds its signature.  
+9. **Origination PSBT is broadcast** — once all signatures are collected, the fully-signed transaction is broadcast to the Bitcoin network.  
+10. **Confirmation** — the loan becomes Active once the transaction is confirmed on-chain. Bound begins LTV monitoring.
 
 ### **Requirements**
 
 * The origination PSBT must be atomic — all transfers happen in one transaction.  
-* All loan activity must occur in Bound Trading Wallets. Borrowers cannot use Connected Wallets for lending.  
+* All loan activity must occur in Bound Trading Wallets.  
+* Bound must validate that the PSBT structure matches the agreed loan terms before co-signing.  
 * The system must record the multisig address and all party public keys for monitoring and future PSBT construction (repayment, liquidation, or forfeiture).  
-* The pre-signed liquidation PSBT must be securely stored by Bound. It must only be co-signed and broadcast when the liquidation threshold is confirmed breached per the liquidation flow (see Section 7a).  
+* The pre-signed liquidation PSBT must be securely stored by Bound. It must only be co-signed and broadcast when the liquidation threshold is confirmed breached per the liquidation flow (see Section 7).  
 * Future tokenization plans \- The origination PSBT must include structured loan metadata embedded in the transaction. At minimum: loan amount, collateral amount, interest rate, origination date, expected repayment date, lender identifier, and borrower identifier. This metadata will be used in a future phase to tokenize loan positions on a separate chain, so the on-chain record must be self-describing. The encoding format and location within the transaction (e.g., additional OP\_RETURN, witness data) is a dev decision, but the data must be recoverable by parsing the confirmed transaction.
 
 **🔧 Dev-Decision Zone:** The specific Bitcoin Script construction for the 2-of-3 multisig (bare multisig, P2WSH, P2TR with MuSig2 or script path) should be finalized during implementation. The functional requirement is that any 2 of the 3 keys can spend. The dev team should also determine the appropriate number of on-chain confirmations required before transitioning to Active state.
 
 ---
 
-## **6\. Repayment Flow**
+## **5\. Repayment Flow**
 
 ### **Overview**
 
@@ -190,13 +170,13 @@ Borrowers may repay at any time during the Active or Grace Period states. There 
 * Repayment must be available at any time during Active or Grace Period states.  
 * The system must verify the borrower holds sufficient bUSD before constructing the PSBT.  
 * If Bound is unavailable, the borrower must be able to contact the lender directly for co-signing. The system should provide a mechanism for this fallback path.  
-* The repayment PSBT must include structured loan metadata embedded in the transaction, mirroring the origination metadata format. At minimum: loan ID, actual repayment date, principal repaid, interest paid, and days outstanding. This creates a complete on-chain audit trail for future loan tokenization on a separate chain.
+* Future Tokenization Path \- The repayment PSBT must include structured loan metadata embedded in the transaction, mirroring the origination metadata format. At minimum: loan ID, actual repayment date, principal repaid, interest paid, and days outstanding.
 
 **🔧 Dev-Decision Zone:** The fallback path for lender direct co-signing (API endpoint on lender side, communication protocol) should be defined in the lender integration specification.
 
 ---
 
-## **7\. Default & Forfeiture**
+## **6\. Default & Forfeiture**
 
 ### **Overview**
 
@@ -223,7 +203,7 @@ If the borrower does not repay by the end of the grace period, the loan enters t
 
 ---
 
-## **8\. Liquidation**
+## **7\. Liquidation**
 
 ### **Overview**
 
@@ -231,9 +211,9 @@ If BTC price drops and the loan's LTV breaches 95%, Bound initiates liquidation 
 
 ### **Price Feed**
 
-Bound monitors BTC price using the average of 5 independent API sources: CoinMarketCap, CoinGecko, Binance, Hyperliquid, and one additional source.
+Bound monitors BTC price using 5 independent API sources.
 
-**🔧 Dev-Decision Zone:** The fifth price feed source should be selected during implementation. The averaging method (mean, median, trimmed mean) and handling of stale or failed feeds should also be defined. Median may be more resilient to a single outlier feed.
+**🔧 Dev-Decision Zone:** The 5 price feed sources should be selected during implementation. Must include a mix of aggregators and exchange APIs for resilience.
 
 ### **LTV Calculation**
 
@@ -246,24 +226,23 @@ Where `outstanding_debt` is the loan principal \+ fee \+ accrued interest as of 
 ### **Liquidation Flow**
 
 1. **LTV breach detected** — Bound's price monitoring system detects that the loan's LTV has reached or exceeded 95%.  
-2. **Loan marked as in-danger** — the system flags the loan and begins a 15-minute confirmation window.  
-3. **Price re-check** — after 15 minutes, Bound refreshes all 5 price feeds and recalculates LTV.  
-4. **If still above 95%** — Bound co-signs the pre-signed liquidation PSBT (already signed by the lender at origination) and broadcasts it.  
-5. **Confirmation** — once confirmed on-chain, the loan transitions to Liquidated. The borrower is notified. The loan no longer needs to be repaid.
+2. **Oracle differential check** — Bound compares prices across all 5 feeds. If the maximum price differential between any two oracles is ≤ 0.25%, proceed to step 3\. If the differential is \> 0.25%, wait 5 minutes and re-query all feeds. Repeat until the differential is ≤ 0.25% or the LTV has recovered below 95%.  
+3. **Liquidation execution** — once the oracle differential check passes and LTV is still ≥ 95%, Bound co-signs the pre-signed liquidation PSBT (already signed by the lender at origination) and broadcasts it.  
+4. **Confirmation** — once confirmed on-chain, the loan transitions to Liquidated. The borrower is notified. The loan no longer needs to be repaid.
 
 ### **Requirements**
 
 * Liquidation can occur at any time during Active or Grace Period states.  
-* The 15-minute confirmation window is mandatory — Bound must not liquidate on a single price check.  
-* The pre-signed liquidation PSBT (signed by lender at origination) must be the mechanism used. Bound adds its signature only after the confirmation window validates the breach.  
-* All 5 price feeds must be queried on both the initial check and the re-check.  
-* The system must log the price data from both checks for audit purposes.  
-* The system must notify the borrower when their loan is marked as in-danger and again when liquidation is executed.  
-* Manual review requirement for collateral seizure of \>= .20 BTC applies to liquidation as well (same as forfeiture, see Section 7).
+* The oracle differential check is mandatory — Bound must not liquidate when price feeds disagree by more than 0.25%.  
+* The pre-signed liquidation PSBT (signed by lender at origination) must be the mechanism used. Bound adds its signature only after the oracle differential check passes and LTV is confirmed ≥ 95%.  
+* All 5 price feeds must be queried on every check.  
+* The system must log the price data from all feeds at each check for audit purposes.  
+* The system must notify the borrower when their loan is approaching liquidation and again when liquidation is executed.  
+* Manual review requirement for collateral seizure of \>= .20 BTC applies to liquidation as well (same as forfeiture, see Section 6).
 
 ---
 
-## **9\. Origination Fee Structure**
+## **8\. Origination Fee Structure**
 
 The origination fee is Bound's revenue on each loan. It is added to the loan principal at origination and routed to Bound in the origination PSBT.
 
@@ -281,7 +260,7 @@ The origination fee is Bound's revenue on each loan. It is added to the loan pri
 
 ---
 
-## **10\. Interest Calculation**
+## **9\. Interest Calculation**
 
 ### **Rate Determination**
 
@@ -307,22 +286,7 @@ Where `days_outstanding` is the number of days from origination PSBT on-chain co
 
 ---
 
-## **11\. Trust Model & Security**
-
-| Scenario | Spending Path | Result |
-| ----- | ----- | ----- |
-| Borrower wants to repay, Bound cooperates | Borrower \+ Bound | Normal repayment ✓ |
-| Borrower wants to repay, Bound offline | Borrower \+ Lender | Fallback repayment ✓ |
-| Bound tries to steal collateral alone | Requires second signer | Impossible ✓ |
-| Lender tries to steal collateral alone | Requires second signer | Impossible ✓ |
-| Borrower tries to steal collateral alone | Requires second signer | Impossible ✓ |
-| Bound \+ Lender collude against borrower | Bound \+ Lender | Collateral stolen. Residual risk. |
-| Bound \+ Borrower collude against lender | Bound \+ Borrower | Collateral returned without repayment. Lender loses. |
-| Lender \+ Borrower collude against Bound | Lender \+ Borrower | Collateral moved without Bound involvement. Bound loses fee revenue only. |
-
----
-
-## **12\. Edge Cases & Failure Modes**
+## **10\. Edge Cases & Failure Modes**
 
 ### **Bound Offline During Active Loan**
 
@@ -342,7 +306,7 @@ Where `days_outstanding` is the number of days from origination PSBT on-chain co
 
 **Impact:** If one or more price feed APIs are unavailable or returning stale data during a liquidation check, Bound may make incorrect liquidation decisions — either failing to liquidate (lender risk) or liquidating prematurely (borrower risk).
 
-**Required mitigation:** The system must require a minimum number of responsive feeds (e.g., at least 3 of 5\) to proceed with a liquidation. If fewer than the minimum are available, the system should alert the operations team and defer the liquidation decision until sufficient feeds are restored. The 15-minute confirmation window provides an additional buffer against transient feed issues.
+**Required mitigation:** The system must require a minimum number of responsive feeds (e.g., at least 3 of 5\) to proceed with a liquidation. If fewer than the minimum are available, the system should alert the operations team and defer the liquidation decision until sufficient feeds are restored.
 
 ### **Origination Timeout**
 
@@ -364,11 +328,11 @@ Where `days_outstanding` is the number of days from origination PSBT on-chain co
 
 ---
 
-## **13\. Lender Integration**
+## **11\. Lender Integration**
 
 ### **Overview**
 
-Lenders integrate with Bound's lending system via an API. Any entity can register as a lender and begin responding to RFQs.
+Lenders integrate with Bound's lending system via an API. Lenders must register as an approved Lender with Bound via a manual whitelisting process to begin responding to RFQs.
 
 ### **Required Lender Capabilities**
 
@@ -383,7 +347,7 @@ A lender must be able to:
 
 ### **API Requirements**
 
-* The API must support lender authentication and authorization.  
+* The API must support lender authentication and authorization, checking against the whitelist of Lenders  
 * The API must provide real-time RFQ delivery with low latency.  
 * The API must expose loan lifecycle events (origination confirmed, repayment initiated, grace period entered, default, liquidation in-danger, liquidation executed) so lenders can track their positions.  
 * The API must support PSBT exchange: Bound sends unsigned/partially-signed PSBTs to lenders, lenders return their signed versions.
@@ -392,14 +356,15 @@ A lender must be able to:
 
 ---
 
-## **14\. Configuration Parameters**
+## **12\. Configuration Parameters**
 
 | Parameter | Description | Default / Suggested | Status |
 | ----- | ----- | ----- | ----- |
 | `origination_fee_pct` | Percentage of loan principal collected by Bound as origination fee | TBD | Awaiting business decision |
 | `grace_period_days` | Number of days after loan term expiry before forfeiture path activates | 7 | Confirmed |
 | `liquidation_ltv_pct` | LTV percentage at which liquidation is triggered | 95% | Confirmed |
-| `liquidation_confirmation_minutes` | Wait time between initial LTV breach detection and re-check before executing liquidation | 15 | Confirmed |
+| `oracle_differential_threshold_pct` | Maximum acceptable price differential between any two oracle feeds before liquidation can execute | 0.25% | Confirmed |
+| `oracle_retry_wait_seconds` | Wait time before re-checking feeds when oracle differential exceeds threshold | 300 | Confirmed |
 | `min_price_feeds_required` | Minimum number of responsive price feeds required to execute a liquidation | TBD | Needs engineering input |
 | `rfq_expiry_seconds` | Duration an RFQ remains open for lender responses before auto-cancelling | TBD | Needs product input |
 | `origination_signing_timeout_seconds` | Maximum time allowed for all three parties to sign the origination PSBT | TBD | Needs product input |
@@ -412,7 +377,44 @@ A lender must be able to:
 
 ---
 
-## **15\. Future Considerations**
+## **Appendix**
+
+### **Definitions & Terminology**
+
+#### **Terms**
+
+| Term | Definition |
+| ----- | ----- |
+| RFQ (Request for Quote) | A borrower-initiated request broadcast to lenders specifying desired loan amount and term length. |
+| Loan Term | The agreed duration of the loan, starting from origination PSBT confirmation on-chain, in days. |
+| Grace Period | A fixed window, in days, (see Configuration Parameters) after the stated loan term expires during which the borrower may still repay. After the grace period, Bound \+ Lender may claim collateral. |
+| Liquidation Threshold | The LTV percentage at which Bound initiates liquidation of the borrower's collateral. Set at 95% LTV — the remaining 5% serves as an implied penalty. |
+| Origination PSBT | The partially-signed Bitcoin transaction that atomically executes the loan: transfers bUSD from lender to borrower, locks BTC in the 2-of-3 multisig, and routes the origination fee to Bound. |
+| Repayment PSBT | The partially-signed Bitcoin transaction that closes the loan: returns BTC to the borrower and transfers bUSD principal \+ interest to the lender. |
+| Liquidation PSBT | A pre-signed PSBT created at origination that transfers 100% of BTC collateral to the lender. Lender signs at origination; Bound holds and co-signs only if the liquidation threshold is breached. |
+
+#### **Roles**
+
+| Role | Description |
+| ----- | ----- |
+| Borrower | Deposits BTC collateral, receives stablecoin loan, may repay to reclaim BTC. Must operate from a Bound Trading Wallet. |
+| Lender | Provides bUSD liquidity, sets LTV and interest rate per RFQ, receives repayment or claims collateral on default. Integrates via API. Must operate from a Bound Trading Wallet. |
+| Bound | Coordinates PSBT construction, co-signs transactions, collects origination fees. Acts as a neutral third party — cannot move funds unilaterally. |
+
+### **Trust Model & Security**
+
+| Scenario | Spending Path | Result |
+| ----- | ----- | ----- |
+| Borrower wants to repay, Bound cooperates | Borrower \+ Bound | Normal repayment ✓ |
+| Borrower wants to repay, Bound offline | Borrower \+ Lender | Fallback repayment ✓ |
+| Bound tries to steal collateral alone | Requires second signer | Impossible ✓ |
+| Lender tries to steal collateral alone | Requires second signer | Impossible ✓ |
+| Borrower tries to steal collateral alone | Requires second signer | Impossible ✓ |
+| Bound \+ Lender collude against borrower | Bound \+ Lender | Collateral stolen. Residual risk. |
+| Bound \+ Borrower collude against lender | Bound \+ Borrower | Collateral returned without repayment. Lender loses. |
+| Lender \+ Borrower collude against Bound | Lender \+ Borrower | Collateral moved without Bound involvement. Bound loses fee revenue only. |
+
+### **Future Considerations**
 
 * **Securitization / secondary market:** Lender positions have a defined binary payoff at expiry and could be traded on a secondary market. The lender's position is economically equivalent to a covered call on BTC — it could be stripped into fixed-income and option components. This feature would enable a tradeable structured products layer on Bound. Design and specification deferred to a future version.  
 * **Surplus return on default:** Rather than the lender keeping full BTC collateral on default, return any surplus above debt \+ penalty to the borrower. Requires a price oracle or pre-signed tiered transaction structure. Deferred to v2.  
