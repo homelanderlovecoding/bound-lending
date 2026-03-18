@@ -22,10 +22,10 @@
 
 | Layer | Choice | Why |
 |---|---|---|
-| Backend | Node.js (TypeScript) | Best Bitcoin lib support |
+| Backend | NestJS (Node.js/TypeScript) | Modular DI framework + best Bitcoin lib support |
 | DB | MongoDB | Flexible loan/RFQ schema, easy to iterate |
 | Cache/Queue | Redis + BullMQ | Timer jobs, price cache, PSBT expiry |
-| Realtime | WebSocket (ws) | RFQ feed + loan events |
+| Realtime | WebSocket (@nestjs/websockets) | RFQ feed + loan events |
 | Price Feeds | 5 sources (dev decision — mix aggregators + exchange APIs) | Oracle differential check for liquidation |
 | Bitcoin | bitcoinjs-lib + Bitcoin Core RPC + mempool.space | Multisig, PSBT, chain monitoring |
 | Frontend | Next.js | Borrower UI + lender dashboard |

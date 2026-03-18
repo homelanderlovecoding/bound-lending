@@ -1,0 +1,52 @@
+export const RESPONSE_CODE = {
+  common: {
+    success: 'SUCCESS',
+    badRequest: 'BAD_REQUEST',
+    unauthorized: 'UNAUTHORIZED',
+    forbidden: 'FORBIDDEN',
+    notFound: 'NOT_FOUND',
+    internalError: 'INTERNAL_ERROR',
+  },
+  user: {
+    notFound: 'USER_NOT_FOUND',
+    alreadyExists: 'USER_ALREADY_EXISTS',
+    notWhitelistedLender: 'USER_NOT_WHITELISTED_LENDER',
+    invalidPubkey: 'USER_INVALID_PUBKEY',
+  },
+  auth: {
+    invalidSignature: 'AUTH_INVALID_SIGNATURE',
+    challengeExpired: 'AUTH_CHALLENGE_EXPIRED',
+    invalidToken: 'AUTH_INVALID_TOKEN',
+    tokenExpired: 'AUTH_TOKEN_EXPIRED',
+  },
+  rfq: {
+    notFound: 'RFQ_NOT_FOUND',
+    expired: 'RFQ_EXPIRED',
+    alreadyAccepted: 'RFQ_ALREADY_ACCEPTED',
+    insufficientBalance: 'RFQ_INSUFFICIENT_BALANCE',
+    invalidLtv: 'RFQ_INVALID_LTV',
+    offerNotFound: 'RFQ_OFFER_NOT_FOUND',
+    cannotCancel: 'RFQ_CANNOT_CANCEL',
+  },
+  loan: {
+    notFound: 'LOAN_NOT_FOUND',
+    invalidState: 'LOAN_INVALID_STATE',
+    notBorrower: 'LOAN_NOT_BORROWER',
+    notLender: 'LOAN_NOT_LENDER',
+    insufficientRepayment: 'LOAN_INSUFFICIENT_REPAYMENT',
+    alreadySigned: 'LOAN_ALREADY_SIGNED',
+    forfeitureNotAllowed: 'LOAN_FORFEITURE_NOT_ALLOWED',
+  },
+  escrow: {
+    invalidPubkey: 'ESCROW_INVALID_PUBKEY',
+    psbtConstructionFailed: 'ESCROW_PSBT_CONSTRUCTION_FAILED',
+    invalidSignature: 'ESCROW_INVALID_SIGNATURE',
+    insufficientSignatures: 'ESCROW_INSUFFICIENT_SIGNATURES',
+    finalizationFailed: 'ESCROW_FINALIZATION_FAILED',
+  },
+  liquidation: {
+    feedsUnavailable: 'LIQUIDATION_FEEDS_UNAVAILABLE',
+    oracleDifferentialTooHigh: 'LIQUIDATION_ORACLE_DIFFERENTIAL_TOO_HIGH',
+    manualReviewRequired: 'LIQUIDATION_MANUAL_REVIEW_REQUIRED',
+  },
+} as const;

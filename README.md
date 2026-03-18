@@ -10,10 +10,10 @@ BTC-collateralized, fixed-term, fixed-rate lending platform. Borrowers lock BTC 
 
 | Layer | Choice | Why |
 |---|---|---|
-| Backend | Node.js (TypeScript) | Best Bitcoin lib ecosystem (bitcoinjs-lib, @scure/btc-signer) |
+| Backend | NestJS (Node.js/TypeScript) | Modular DI framework + best Bitcoin lib ecosystem |
 | DB | MongoDB | Flexible schema for RFQs/offers/loan lifecycle |
-| Cache/Queue | Redis + BullMQ | Timer jobs, price cache, PSBT expiry |
-| Realtime | WebSocket (ws) | RFQ feed + loan events |
+| Cache/Queue | Redis + BullMQ (@nestjs/bullmq) | Timer jobs, price cache, PSBT expiry |
+| Realtime | WebSocket (@nestjs/websockets) | RFQ feed + loan events |
 | Price Feeds | CoinMarketCap, CoinGecko, Binance, Hyperliquid, +1 TBD | 5-source median for liquidation |
 | Bitcoin | bitcoinjs-lib + Bitcoin Core RPC + mempool.space | Multisig, PSBT, chain monitoring |
 | Frontend | Next.js | Borrower UI + lender dashboard |
@@ -32,8 +32,8 @@ BTC-collateralized, fixed-term, fixed-rate lending platform. Borrowers lock BTC 
            │ REST                   │ WebSocket
            ▼                        ▼
 ┌──────────────────────────────────────────────────────┐
-│                 API Gateway (Express)                  │
-│              Auth middleware (Trading Wallet)          │
+│              API Gateway (NestJS)                      │
+│         Guards: JwtAuth, ApiKey, Roles                │
 └───┬──────┬──────┬──────┬──────┬──────┬───────────────┘
     │      │      │      │      │      │
     ▼      ▼      ▼      ▼      ▼      ▼
@@ -61,23 +61,28 @@ BTC-collateralized, fixed-term, fixed-rate lending platform. Borrowers lock BTC 
 ## Module Boundaries
 
 ```
-src/
-├── auth/             # Trading Wallet auth, session management
-├── rfq/              # RFQ lifecycle, offer management
-├── loan/             # State machine (9 states), lifecycle
-├── escrow/           # 2-of-3 multisig builder, PSBT construction
-├── signer/           # Bound co-signing (isolated, HSM-ready)
-├── indexer/          # Chain watcher, mempool monitor, reorg detection
-├── liquidation/      # Price feeds, LTV monitor, 15-min confirm window
-├── notify/           # WebSocket hub + borrower alerts
-├── queue/            # BullMQ jobs (timers, retries, price checks)
-├── metadata/         # Loan metadata encoder/decoder (OP_RETURN)
-├── api/
-│   ├── borrower/     # Borrower-facing routes
-│   ├── lender/       # Lender-facing routes (API integration)
-│   └── internal/     # Bound ops routes (manual review, admin)
-├── db/               # MongoDB models, indexes
-└── shared/           # Types, constants, config params, errors
+be/src/
+├── commons/
+│   ├── base-module/      # BaseService<T>, BaseEntity, BaseController
+│   ├── constants/        # ENV_REGISTER, EVENT, TABLE_NAME, RESPONSE_CODE
+│   └── types/            # IAppConfig, IDatabaseConfig, IRedisConfig, IBitcoinConfig
+├── configs/              # registerAs() config files per env group
+├── database/entities/    # All Mongoose schemas (export from index.ts)
+├── modules/
+│   ├── auth/             # JWT auth, Trading Wallet challenge/verify
+│   ├── user/             # User CRUD, lender whitelist
+│   ├── rfq/              # RFQ lifecycle, offer management
+│   ├── loan/             # State machine (9 states), lifecycle
+│   ├── escrow/           # 2-of-3 multisig, PSBT construction, signing
+│   ├── price-feed/       # 5-source BTC price, oracle differential check
+│   ├── liquidation/      # LTV monitor, liquidation execution
+│   └── notification/     # WebSocket event hub + borrower alerts
+├── shared/               # Cross-cutting services (Redis, external APIs)
+├── guards/               # JwtAuthGuard, ApiKeyGuard, RolesGuard
+├── interceptors/         # ResponseInterceptor (BaseResponseDto)
+├── decorators/           # @User, @Public, @Roles, @PaginateQuery
+├── exceptions/           # AllExceptionFilter, HttpExceptionFilter
+└── utils/                # Stateless utilities
 ```
 
 ---
