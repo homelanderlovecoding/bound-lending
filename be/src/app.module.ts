@@ -18,6 +18,10 @@ import { UserModule } from './modules/user/user.module';
 import { RfqModule } from './modules/rfq/rfq.module';
 import { LoanModule } from './modules/loan/loan.module';
 import { PriceFeedModule } from './modules/price-feed/price-feed.module';
+import { LiquidationModule } from './modules/liquidation/liquidation.module';
+import { IndexerModule } from './modules/indexer/indexer.module';
+import { NotificationModule } from './modules/notification/notification.module';
+import { QueueModule } from './queue/queue.module';
 
 @Module({
   imports: [
@@ -46,6 +50,12 @@ import { PriceFeedModule } from './modules/price-feed/price-feed.module';
     RfqModule,
     LoanModule,
     PriceFeedModule,
+    LiquidationModule,
+    IndexerModule,
+    NotificationModule,
+
+    // Background Jobs
+    QueueModule,
   ],
 })
 export class AppModule {}

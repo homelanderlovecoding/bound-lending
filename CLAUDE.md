@@ -47,15 +47,14 @@ You are working on **Bound Lending** — a BTC-collateralized, fixed-term, fixed
 - [x] Dashboard controller (summary, loan list)
 - [x] API routes (auth, rfqs, loans, dashboard, price, config)
 
-### Phase 3 — Liquidation + Indexer
-- [ ] Price feed module (5 sources, oracle differential check ≤0.25%)
-- [ ] Liquidation module (LTV monitor, execution)
-- [ ] Indexer (chain watcher, mempool monitor)
+### Phase 3 — Liquidation + Indexer ✅
+- [x] Liquidation module (LTV scan, oracle differential check, manual review, execution)
+- [x] Indexer module (chain watcher, funding detection, term/grace expiry checks)
 
-### Phase 4 — Realtime + Notifications
-- [ ] WebSocket gateway (loan + RFQ events)
-- [ ] BullMQ timer jobs
-- [ ] Borrower notifications
+### Phase 4 — Realtime + Notifications ✅
+- [x] WebSocket gateway (subscribe/unsubscribe channels, all RFQ + loan events)
+- [x] Queue processor (price polling, chain polling, expiry checks)
+- [x] Guards (JwtAuth), decorators (@Public), interceptors, exception filter
 
 ### Phase 5 — Frontend
 - [ ] Next.js app in `fe/`
