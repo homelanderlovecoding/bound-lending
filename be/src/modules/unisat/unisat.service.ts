@@ -143,7 +143,7 @@ export class UnisatService {
       if (json.code !== 0) throw new Error(`UniSat API error: ${json.msg}`);
 
       return {
-        blockHeight: json.data?.bestHeight ?? 0,
+        blockHeight: json.data?.blocks ?? json.data?.bestHeight ?? 0,
         blockHash: json.data?.bestBlockHash ?? '',
         network: json.data?.chain ?? 'signet',
       };
