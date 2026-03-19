@@ -5,7 +5,11 @@ import { ENV_REGISTER, EVENT } from '../../commons/constants';
 import { ILendingConfig } from '../../commons/types';
 import { LoanEntity, ELoanState } from '../../database/entities';
 import { LoanService } from '../loan/loan.service';
+import { UnisatService } from '../unisat/unisat.service';
 import { IWatchedAddress, IUtxoStatus } from './indexer.type';
+
+/** Approximate blocks per day on Bitcoin/signet (10 min avg) */
+const BLOCKS_PER_DAY = 144;
 
 @Injectable()
 export class IndexerService {
@@ -15,6 +19,7 @@ export class IndexerService {
 
   constructor(
     private readonly loanService: LoanService,
+    private readonly unisatService: UnisatService,
     private readonly eventEmitter: EventEmitter2,
     private readonly configService: ConfigService,
   ) {
@@ -61,12 +66,16 @@ export class IndexerService {
   }
 
   /**
-   * Check for term/grace expiry on active loans.
+   * Check for term/grace expiry on active loans using block height.
    */
   async checkLoanExpiry(): Promise<void> {
-    const now = new Date();
-    await this.checkTermExpiry(now);
-    await this.checkGraceExpiry(now);
+    const currentBlock = await this.unisatService.getLatestBlockHeight();
+    if (currentBlock === 0) {
+      this.logger.warn('Could not fetch block height, skipping expiry check');
+      return;
+    }
+    await this.checkTermExpiry(currentBlock);
+    await this.checkGraceExpiry(currentBlock);
   }
 
   /**
@@ -104,57 +113,64 @@ export class IndexerService {
     const loanId = loan._id.toString();
     this.logger.log(`Funding confirmed for loan ${loanId}: ${utxo.txid}`);
 
-    // Update escrow with funding UTXO details
+    const originationBlock = await this.unisatService.getLatestBlockHeight();
+    const termExpiresBlock = originationBlock + loan.terms.termDays * BLOCKS_PER_DAY;
+    const graceExpiresBlock = termExpiresBlock + loan.terms.graceDays * BLOCKS_PER_DAY;
+
+    // Timestamp equivalents for display only
+    const now = new Date();
+    const msPerBlock = 10 * 60 * 1000;
+
     await this.loanService.findByIdAndUpdate(loanId, {
       $set: {
         'escrow.fundingTxid': utxo.txid,
         'escrow.fundingVout': utxo.vout,
-        'terms.originatedAt': new Date(),
-        'terms.termExpiresAt': new Date(
-          Date.now() + loan.terms.termDays * 24 * 60 * 60 * 1000,
-        ),
-        'terms.graceExpiresAt': new Date(
-          Date.now() +
-            (loan.terms.termDays + loan.terms.graceDays) * 24 * 60 * 60 * 1000,
-        ),
+        // Block height fields (enforcement)
+        'terms.originationBlock': originationBlock,
+        'terms.termExpiresBlock': termExpiresBlock,
+        'terms.graceExpiresBlock': graceExpiresBlock,
+        // Timestamp fields (display only)
+        'terms.originatedAt': now,
+        'terms.termExpiresAt': new Date(now.getTime() + loan.terms.termDays * msPerBlock * BLOCKS_PER_DAY),
+        'terms.graceExpiresAt': new Date(now.getTime() + (loan.terms.termDays + loan.terms.graceDays) * msPerBlock * BLOCKS_PER_DAY),
       },
     });
 
-    // Transition to ACTIVE
     await this.loanService.transitionState(loanId, ELoanState.ACTIVE, {
       txid: utxo.txid,
       confirmations: utxo.confirmations,
+      originationBlock,
     });
   }
 
-  private async checkTermExpiry(now: Date): Promise<void> {
+  private async checkTermExpiry(currentBlock: number): Promise<void> {
     const expiredLoans = await this.loanService.find({
       state: ELoanState.ACTIVE,
-      'terms.termExpiresAt': { $lte: now },
+      'terms.termExpiresBlock': { $lte: currentBlock },
     });
 
     for (const loan of expiredLoans) {
-      this.logger.log(`Term expired for loan ${loan._id}`);
+      this.logger.log(`Term expired for loan ${loan._id} at block ${currentBlock}`);
       await this.loanService.transitionState(
         loan._id.toString(),
         ELoanState.GRACE,
-        { termExpiredAt: now },
+        { termExpiredAtBlock: currentBlock },
       );
     }
   }
 
-  private async checkGraceExpiry(now: Date): Promise<void> {
+  private async checkGraceExpiry(currentBlock: number): Promise<void> {
     const defaultedLoans = await this.loanService.find({
       state: ELoanState.GRACE,
-      'terms.graceExpiresAt': { $lte: now },
+      'terms.graceExpiresBlock': { $lte: currentBlock },
     });
 
     for (const loan of defaultedLoans) {
-      this.logger.log(`Grace expired for loan ${loan._id}`);
+      this.logger.log(`Grace expired for loan ${loan._id} at block ${currentBlock}`);
       await this.loanService.transitionState(
         loan._id.toString(),
         ELoanState.DEFAULTED,
-        { graceExpiredAt: now },
+        { graceExpiredAtBlock: currentBlock },
       );
     }
   }

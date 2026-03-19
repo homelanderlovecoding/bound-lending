@@ -25,4 +25,37 @@ export class UnisatController {
     const satoshi = await this.unisatService.getBtcBalance(address);
     return { address, satoshi, btc: satoshi / 1e8 };
   }
+
+  @Get('balance')
+  @ApiOperation({ summary: 'Get full balance (BTC + bUSD Rune) + current block height' })
+  @ApiQuery({ name: 'address', required: true, type: String })
+  async getBalance(@Query('address') address: string) {
+    const [btcSatoshi, busd, blockInfo] = await Promise.all([
+      this.unisatService.getBtcBalance(address),
+      this.unisatService.getBusdBalance(address),
+      this.unisatService.getBlockchainInfo(),
+    ]);
+
+    return {
+      address,
+      blockHeight: blockInfo.blockHeight,
+      blockHash: blockInfo.blockHash,
+      btc: {
+        satoshi: btcSatoshi,
+        amount: btcSatoshi / 1e8,
+      },
+      busd: {
+        runeId: busd.runeId,
+        amount: busd.amount,
+        amountRaw: busd.amountRaw,
+        divisibility: busd.divisibility,
+      },
+    };
+  }
+
+  @Get('blockchain/info')
+  @ApiOperation({ summary: 'Get current block height and chain info' })
+  async getBlockchainInfo() {
+    return this.unisatService.getBlockchainInfo();
+  }
 }

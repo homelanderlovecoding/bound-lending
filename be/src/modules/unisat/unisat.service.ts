@@ -122,6 +122,45 @@ export class UnisatService {
     }
   }
 
+  /**
+   * Get current blockchain info including latest block height.
+   * GET /v1/indexer/blockchain/info
+   */
+  async getBlockchainInfo(): Promise<{ blockHeight: number; blockHash: string; network: string }> {
+    const url = `${this.config.baseUrl}/v1/indexer/blockchain/info`;
+
+    try {
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${this.config.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!res.ok) throw new Error(`UniSat blockchain info HTTP ${res.status}`);
+
+      const json = await res.json();
+      if (json.code !== 0) throw new Error(`UniSat API error: ${json.msg}`);
+
+      return {
+        blockHeight: json.data?.bestHeight ?? 0,
+        blockHash: json.data?.bestBlockHash ?? '',
+        network: json.data?.chain ?? 'signet',
+      };
+    } catch (error) {
+      this.logger.error(`UniSat blockchain info fetch failed: ${error}`);
+      return { blockHeight: 0, blockHash: '', network: 'signet' };
+    }
+  }
+
+  /**
+   * Get latest block height only (convenience method).
+   */
+  async getLatestBlockHeight(): Promise<number> {
+    const info = await this.getBlockchainInfo();
+    return info.blockHeight;
+  }
+
   private emptyBalance(address: string, runeId: string): IUnisatBalanceResult {
     return { address, runeId, amount: 0, amountRaw: '0', divisibility: 0 };
   }

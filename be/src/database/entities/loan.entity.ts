@@ -68,6 +68,23 @@ export class LoanTermsSubDoc {
 
   @Prop({ type: Date })
   graceExpiresAt: Date;
+
+  /** Block height when loan was originated (funding confirmed) */
+  @Prop({ type: Number })
+  originationBlock: number;
+
+  /**
+   * Block height when term expires: originationBlock + (termDays * 144)
+   * 144 blocks/day @ 10 min/block
+   */
+  @Prop({ type: Number })
+  termExpiresBlock: number;
+
+  /**
+   * Block height when grace period expires: termExpiresBlock + (graceDays * 144)
+   */
+  @Prop({ type: Number })
+  graceExpiresBlock: number;
 }
 
 @Schema({ _id: false })

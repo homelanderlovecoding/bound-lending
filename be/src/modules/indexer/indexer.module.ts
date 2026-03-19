@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { IndexerService } from './indexer.service';
 import { LoanModule } from '../loan/loan.module';
+import { UnisatModule } from '../unisat/unisat.module';
 
 @Module({
-  imports: [LoanModule],
+  imports: [LoanModule, UnisatModule],
   providers: [IndexerService],
   exports: [IndexerService],
 })
