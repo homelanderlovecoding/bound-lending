@@ -4,3 +4,5 @@ export { default as redisConfig } from './redis.config';
 export { default as bitcoinConfig } from './bitcoin.config';
 export { default as lendingConfig } from './lending.config';
 export { default as priceFeedConfig } from './price-feed.config';
+export { default as radfiConfig } from './radfi.config';
+export { default as unisatConfig } from './unisat.config';

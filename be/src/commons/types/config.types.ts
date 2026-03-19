@@ -39,3 +39,14 @@ export interface IPriceFeedConfig {
   oracleDifferentialThresholdPct: number;
   oracleRetryWaitMs: number;
 }
+
+export interface IRadFiConfig {
+  baseUrl: string;
+  busdRuneId: string;
+}
+
+export interface IUnisatConfig {
+  baseUrl: string;
+  apiKey: string;
+  busdRuneId: string;
+}

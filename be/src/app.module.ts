@@ -9,6 +9,8 @@ import {
   bitcoinConfig,
   lendingConfig,
   priceFeedConfig,
+  radfiConfig,
+  unisatConfig,
 } from './configs';
 import { ENV_REGISTER } from './commons/constants';
 import { IDatabaseConfig } from './commons/types';
@@ -22,13 +24,15 @@ import { LiquidationModule } from './modules/liquidation/liquidation.module';
 import { IndexerModule } from './modules/indexer/indexer.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { QueueModule } from './queue/queue.module';
+import { RadFiModule } from './modules/radfi/radfi.module';
+import { UnisatModule } from './modules/unisat/unisat.module';
 
 @Module({
   imports: [
     // Config
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, redisConfig, bitcoinConfig, lendingConfig, priceFeedConfig],
+      load: [appConfig, databaseConfig, redisConfig, bitcoinConfig, lendingConfig, priceFeedConfig, radfiConfig, unisatConfig],
     }),
 
     // Database
@@ -53,6 +57,10 @@ import { QueueModule } from './queue/queue.module';
     LiquidationModule,
     IndexerModule,
     NotificationModule,
+
+    // Wallet & Indexer Integrations
+    RadFiModule,
+    UnisatModule,
 
     // Background Jobs
     QueueModule,

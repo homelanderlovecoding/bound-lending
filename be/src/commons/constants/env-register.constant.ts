@@ -5,4 +5,6 @@ export const ENV_REGISTER = {
   BITCOIN: 'bitcoin',
   LENDING: 'lending',
   PRICE_FEED: 'priceFeed',
+  RADFI: 'radfi',
+  UNISAT: 'unisat',
 } as const;
