@@ -1,6 +1,6 @@
 # Bound Lending
 
-BTC-collateralized, fixed-term, fixed-rate lending platform. Borrowers lock BTC in a 2-of-3 multisig escrow and receive bUSD. Repay before deadline → get BTC back. Don't → lender claims BTC.
+BTC-collateralized, fixed-term, fixed-rate lending platform on Bitcoin Signet. Borrowers lock BTC in a 2-of-3 taproot multisig escrow and receive bUSD (Runes). Repay before deadline → get BTC back. Don't → lender claims BTC.
 
 **Three parties:** Borrower, Lender, Bound (coordinator/co-signer)
 
@@ -8,16 +8,18 @@ BTC-collateralized, fixed-term, fixed-rate lending platform. Borrowers lock BTC 
 
 ## Tech Stack
 
-| Layer | Choice | Why |
+| Layer | Choice | Notes |
 |---|---|---|
-| Backend | NestJS (Node.js/TypeScript) | Modular DI framework + best Bitcoin lib ecosystem |
-| DB | MongoDB | Flexible schema for RFQs/offers/loan lifecycle |
-| Cache/Queue | Redis + BullMQ (@nestjs/bullmq) | Timer jobs, price cache, PSBT expiry |
+| Backend | NestJS (Node.js/TypeScript) | Modular DI framework |
+| DB | MongoDB | RFQ/loan lifecycle |
+| Cache/Queue | Redis + BullMQ | Timer jobs, price cache |
 | Realtime | WebSocket (@nestjs/websockets) | RFQ feed + loan events |
-| Price Feeds | CoinMarketCap, CoinGecko, Binance, Hyperliquid, +1 TBD | 5-source median for liquidation |
-| Bitcoin | bitcoinjs-lib + Bitcoin Core RPC + mempool.space | Multisig, PSBT, chain monitoring |
-| Frontend | Next.js | Borrower UI + lender dashboard |
-| Wallet | Bound Trading Wallet SDK | Required — no external wallets |
+| Price Feeds | CoinMarketCap, CoinGecko, Binance, Hyperliquid, Kraken | 5-source median |
+| Bitcoin | bitcoinjs-lib + UniSat API | Taproot multisig, PSBT, chain monitoring |
+| Runes Indexer | UniSat signet API | On-chain bUSD balance verification |
+| Trading Wallet | RadFi signet API | UTXO fetching, balance queries, TX broadcast |
+| Frontend | Next.js 14 | Borrower UI + lender dashboard |
+| Testing | Jest (BE) + Vitest + RTL (FE) | 110 BE + 47 FE tests |
 
 ---
 
@@ -40,20 +42,21 @@ BTC-collateralized, fixed-term, fixed-rate lending platform. Borrowers lock BTC 
 ┌──────┐┌─────┐┌──────┐┌──────┐┌──────┐┌───────────┐
 │ Auth ││ RFQ ││ Loan ││Escrow││Notify││ Price Feed │
 └──────┘└─────┘└──────┘└──────┘└──────┘└───────────┘
-                          │                    │
-                ┌─────────┴──────┐             │
-                ▼                ▼             ▼
-          ┌──────────┐    ┌──────────┐  ┌──────────┐
-          │ Indexer   │    │  Bound   │  │Liquidation│
-          │(chain     │    │  Signer  │  │ Engine    │
-          │ watcher)  │    │ (HSM)    │  │           │
-          └──────────┘    └──────────┘  └──────────┘
-                │
-                ▼
-          ┌──────────┐
-          │ Bitcoin   │
-          │  Node     │
-          └──────────┘
+                   │       │                   │
+          ┌────────┘   ┌───┴────────┐          │
+          ▼            ▼            ▼           ▼
+   ┌────────────┐ ┌─────────┐ ┌──────────┐ ┌──────────┐
+   │LoanSigning │ │  Bound  │ │Liquidation│ │ Indexer  │
+   │  Service   │ │ Signer  │ │  Engine  │ │(chain    │
+   └────────────┘ └─────────┘ └──────────┘ │ watcher) │
+          │            │                    └──────────┘
+          ▼            ▼                         │
+   ┌────────────────────────┐                    ▼
+   │   RadFi Signet API     │          ┌──────────────────┐
+   │ (UTXO + TX broadcast)  │          │  UniSat Signet   │
+   └────────────────────────┘          │ (block height +  │
+                                       │  Runes balance)  │
+                                       └──────────────────┘
 ```
 
 ---
@@ -65,51 +68,139 @@ be/src/
 ├── commons/
 │   ├── base-module/      # BaseService<T>, BaseEntity, BaseController
 │   ├── constants/        # ENV_REGISTER, EVENT, TABLE_NAME, RESPONSE_CODE
-│   └── types/            # IAppConfig, IDatabaseConfig, IRedisConfig, IBitcoinConfig
-├── configs/              # registerAs() config files per env group
-├── database/entities/    # All Mongoose schemas (export from index.ts)
+│   └── types/            # IAppConfig, IDatabaseConfig, IRadFiConfig, IUnisatConfig...
+├── configs/              # registerAs() per env group (radfi, unisat, bitcoin...)
+├── database/entities/    # Mongoose schemas (export from index.ts)
 ├── modules/
 │   ├── auth/             # JWT auth, Trading Wallet challenge/verify
 │   ├── user/             # User CRUD, lender whitelist
 │   ├── rfq/              # RFQ lifecycle, offer management
-│   ├── loan/             # State machine (9 states), lifecycle
-│   ├── escrow/           # 2-of-3 multisig, PSBT construction, signing
+│   ├── loan/             # 9-state machine, LoanService, LoanSigningService
+│   ├── escrow/           # P2TR tapscript multisig, PSBT builders, BoundSignerService
 │   ├── price-feed/       # 5-source BTC price, oracle differential check
 │   ├── liquidation/      # LTV monitor, liquidation execution
-│   └── notification/     # WebSocket event hub + borrower alerts
-├── shared/               # Cross-cutting services (Redis, external APIs)
-├── guards/               # JwtAuthGuard, ApiKeyGuard, RolesGuard
-├── interceptors/         # ResponseInterceptor (BaseResponseDto)
-├── decorators/           # @User, @Public, @Roles, @PaginateQuery
-├── exceptions/           # AllExceptionFilter, HttpExceptionFilter
-└── utils/                # Stateless utilities
+│   ├── indexer/          # Block height expiry, funding confirmation
+│   ├── notification/     # WebSocket event hub
+│   ├── radfi/            # Bound Trading Wallet (UTXO, balance, broadcast)
+│   └── unisat/           # On-chain Runes indexer, block height
+└── queue/                # BullMQ background jobs
 ```
 
 ---
 
-## Escrow Design — 2-of-3 Multisig
+## Escrow Design — P2TR Tapscript 2-of-3
 
-### Script (P2WSH)
+### Why Taproot over P2WSH
 
-```
-OP_2 <BorrowerPK> <LenderPK> <BoundPK> OP_3 OP_CHECKMULTISIG
-```
-
-No timelocks. All three spending paths valid from day 0:
-
-| Path | Signers | Use Case |
+| | P2WSH OP_CHECKMULTISIG | P2TR Tapscript |
 |---|---|---|
-| Path 1 | Borrower + Bound | Normal repayment |
-| Path 2 | Lender + Bound | Liquidation, forfeiture |
-| Path 3 | Borrower + Lender | Fallback if Bound offline |
+| Unspent path visibility | All 3 pubkeys revealed on spend | Unspent leaves stay hidden |
+| Signature size | ECDSA 72 bytes each | Schnorr 64 bytes each |
+| Future upgrade | Not upgradeable | Can migrate to MuSig2 key path |
+| Cost vs P2WSH | Baseline | ~3–11 vbytes more per spend |
+
+### Script Structure
+
+```
+Internal key: NUMS point (provably unspendable — no key path)
+  "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
+
+Taptree (3 leaves):
+  ├── Leaf A (depth 1): borrower + lender
+  │     <borrowerXOnly> OP_CHECKSIG <lenderXOnly> OP_CHECKSIGADD OP_2 OP_NUMEQUAL
+  └── Branch
+        ├── Leaf B (depth 2): borrower + bound
+        │     <borrowerXOnly> OP_CHECKSIG <boundXOnly> OP_CHECKSIGADD OP_2 OP_NUMEQUAL
+        └── Leaf C (depth 2): lender + bound
+              <lenderXOnly> OP_CHECKSIG <boundXOnly> OP_CHECKSIGADD OP_2 OP_NUMEQUAL
+```
+
+Leaf A is at depth 1 (cheaper control block) — it's the cooperative repayment path used most often.
+
+### Spending Paths
+
+| Leaf | Signers | Use Case |
+|---|---|---|
+| A (borrower+lender) | Borrower + Lender | Fallback if Bound offline |
+| B (borrower+bound) | Borrower + Bound | Normal repayment |
+| C (lender+bound) | Lender + Bound | Liquidation, forfeiture |
 
 ### Pre-signed Liquidation PSBT
 
-Created at origination:
+At origination Bound builds + pre-signs the liquidation PSBT (Leaf C spend):
 - **Input:** multisig UTXO (BTC collateral)
 - **Output:** 100% BTC → Lender's address
-- **Signed by:** Lender (at origination)
-- **Held by:** Bound (co-signs ONLY on LTV breach + 15-min confirm)
+- **Bound signs at origination** → stored on loan
+- **Triggered on:** LTV ≥ 95% + oracle check + 15-min confirmation
+
+---
+
+## PSBT Flows
+
+### Origination (3-party atomic)
+
+```
+Inputs:
+  [0..n] Lender bUSD UTXOs      → principal + fee
+  [n+1..] Borrower BTC UTXOs   → collateral
+
+Outputs:
+  [0] bUSD → Borrower           (loan amount via Runes)
+  [1] bUSD → Bound              (origination fee)
+  [2] BTC  → P2TR tapscript     (collateral locked in 2-of-3)
+  [3] OP_RETURN BNDL metadata   (CBOR encoded loan terms)
+  [4] OP_RETURN Runes protocol  (Runes transfer data)
+
+Signing:
+  1. Bound builds PSBT + pre-signs liquidation PSBT (stored)
+  2. Borrower signs
+  3. Lender signs
+  4. Bound auto-co-signs → broadcast via RadFi
+```
+
+### Repayment (borrower+bound path — Leaf B)
+
+```
+Inputs:
+  [0..n] Borrower bUSD UTXOs   → principal + interest
+  [n+1]  Multisig BTC UTXO    → collateral
+
+Outputs:
+  [0] BTC  → Borrower           (collateral returned)
+  [1] bUSD → Lender             (principal + interest)
+  [2] OP_RETURN BNDL metadata
+  [3] OP_RETURN Runes protocol
+
+Signing:
+  1. GET /loans/:id/psbt/repay  → Bound pre-signs its half
+  2. Borrower signs + submits
+  3. Finalize + broadcast
+```
+
+### Liquidation (pre-signed, Leaf C)
+
+```
+Input:  Multisig BTC UTXO
+Output: 100% BTC → Lender
+
+Flow:
+  1. LTV ≥ 95% detected by LiquidationEngine
+  2. Oracle differential check (≤ 0.25% between feeds)
+  3. 15-min confirmation window
+  4. Retrieve pre-signed PSBT from loan.liquidation.preSignedPsbt
+  5. Finalize (Bound sig already present from origination)
+  6. Broadcast via RadFi
+```
+
+### Forfeiture (post-default, Leaf C)
+
+```
+Input:  Multisig BTC UTXO
+Output: 100% BTC → Lender
+
+Condition: loan.state === DEFAULTED (grace period expired)
+Signing: Bound builds fresh PSBT + signs → broadcast
+```
 
 ---
 
@@ -125,121 +216,55 @@ Created at origination:
 [OFFER_SELECTED]
     │ Bound builds origination PSBT
     ▼
-[ORIGINATION_PENDING]
-    │ all 3 sign, TX confirmed (N confs)
+[ORIGINATION_PENDING]  ←── all 3 sign, TX confirmed (N blocks)
     ▼
-[ACTIVE] ──────────────────────────────────┐
-    │              │              │         │
-    │ repay        │ LTV ≥ 95%   │ term    │
-    │ confirmed    │ + 15min     │ expires │
-    ▼              ▼              ▼         │
-[REPAID ✓]    [LIQUIDATED ✓]  [GRACE]      │
-                                  │         │
-                    ┌─────────────┼─────┐   │
-                    │             │     │   │
-                    │ repay       │ LTV │   │
-                    │ confirmed   │≥95% │   │
-                    ▼             ▼     │   │
-                [REPAID ✓] [LIQUIDATED ✓]  │
-                                  │        │
-                                  │ grace  │
-                                  │ expires│
-                                  ▼        │
-                              [DEFAULTED]  │
-                                  │        │
-                                  │ lender │
-                                  │ claims │
-                                  ▼        │
-                              [FORFEITED ✓]│
-                                           │
-    [CANCELLED] ◄──────────────────────────┘
+[ACTIVE]
+    ├── repay confirmed    → [REPAID ✓]
+    ├── LTV ≥ 95%          → [LIQUIDATED ✓]
+    └── termExpiresBlock   → [GRACE]
+                                ├── repay confirmed  → [REPAID ✓]
+                                ├── LTV ≥ 95%        → [LIQUIDATED ✓]
+                                └── graceExpiresBlock → [DEFAULTED]
+                                                            └── [FORFEITED ✓]
 ```
 
-### State Transition Rules
+### Block Height Expiry
 
-| From → To | Trigger | Actor |
-|---|---|---|
-| RFQ_OPEN → OFFERS_RECEIVED | Lender submits offer | Lender |
-| RFQ_OPEN → CANCELLED | RFQ expires or borrower cancels | System/Borrower |
-| OFFERS_RECEIVED → OFFER_SELECTED | Borrower accepts | Borrower |
-| OFFER_SELECTED → ORIGINATION_PENDING | Bound builds PSBT | Bound |
-| ORIGINATION_PENDING → ACTIVE | All sign + N confirmations | System |
-| ORIGINATION_PENDING → CANCELLED | Signing timeout | System |
-| ACTIVE → REPAID | Repayment PSBT confirmed | Borrower + (Bound or Lender) |
-| ACTIVE → LIQUIDATED | LTV ≥ 95% + 15-min confirm | Bound (co-signs pre-signed PSBT) |
-| ACTIVE → GRACE | Term expires | System |
-| GRACE → REPAID | Repayment PSBT confirmed | Borrower + (Bound or Lender) |
-| GRACE → LIQUIDATED | LTV ≥ 95% + 15-min confirm | Bound |
-| GRACE → DEFAULTED | Grace period expires | System |
-| DEFAULTED → FORFEITED | Lender + Bound co-sign | Lender + Bound |
+Loan term and grace expiry are enforced by **Bitcoin block height**, not wall-clock time.
+
+```
+originationBlock  = block height when funding confirmed
+termExpiresBlock  = originationBlock + (termDays × 144)
+graceExpiresBlock = termExpiresBlock + (graceDays × 144)
+```
+
+144 blocks/day ≈ 10-min average. Miners can manipulate timestamps ±1h (~6 blocks) — not relevant for loan terms. Timestamp fields (`termExpiresAt`, `graceExpiresAt`) are stored for display only.
+
+Block height fetched from UniSat signet API: `GET /v1/indexer/blockchain/info`
 
 ---
 
-## PSBT Flows
+## External Integrations
 
-### Origination (3-party atomic)
+### RadFi Signet API (`https://signet.ums.radfi.co`)
+No API key required. Used for:
+- `GET /api/wallets/balance?address=` → BTC satoshi balance
+- `GET /api/wallets/runes/balance?address=&runeId=` → bUSD Rune balance
+- `GET /api/utxos` → UTXOs for PSBT construction
+- `POST /api/transactions/broadcast` → broadcast signed TX
 
-```
-Inputs:
-  [0] Lender's bUSD UTXO(s)    → principal + fee
-  [1] Borrower's BTC UTXO(s)   → collateral
+### UniSat Signet API (`https://open-api-signet.unisat.io`)
+Requires `Authorization: Bearer <UNISAT_API_KEY>`. Used for:
+- `GET /v1/indexer/runes/address/{addr}/{runeId}/balance` → on-chain bUSD balance
+- `GET /v1/indexer/address/{addr}/balance` → on-chain BTC balance
+- `GET /v1/indexer/blockchain/info` → current block height
 
-Outputs:
-  [0] bUSD → Borrower           (loan amount)
-  [1] bUSD → Bound              (origination fee)
-  [2] BTC  → 2-of-3 multisig    (collateral locked)
-
-Metadata: OP_RETURN with loan terms (CBOR encoded)
-
-Signing order:
-  1. Bound builds PSBT
-  2. Borrower reviews + signs
-  3. Lender reviews + signs
-  4. Bound verifies + co-signs
-  5. Broadcast
-
-+ Simultaneously: Bound builds liquidation PSBT → Lender pre-signs → Bound stores
-```
-
-### Repayment (2-party)
+### API endpoint on BE
 
 ```
-Inputs:
-  [0] Borrower's bUSD UTXO(s)  → principal + fee + interest
-  [1] Multisig BTC UTXO         → collateral
-
-Outputs:
-  [0] BTC  → Borrower           (collateral returned)
-  [1] bUSD → Lender             (principal + fee + interest)
-
-Metadata: OP_RETURN with repayment details
-
-Signing: Borrower + Bound (or Borrower + Lender if Bound offline)
-```
-
-### Liquidation (pre-signed)
-
-```
-Input:
-  [0] Multisig BTC UTXO         → collateral
-
-Output:
-  [0] BTC → Lender              (100% collateral)
-
-Already signed by: Lender (at origination)
-Bound adds signature only on confirmed LTV breach (95% + 15-min window)
-```
-
-### Forfeiture (post-default)
-
-```
-Input:
-  [0] Multisig BTC UTXO         → collateral
-
-Output:
-  [0] BTC → Lender              (100% collateral)
-
-Signing: Lender requests → signs → Bound verifies default → co-signs
+GET /api/unisat/balance?address=   → { blockHeight, btc, busd }
+GET /api/radfi/balance?address=    → { btcSatoshi, btcAmount, busdAmount }
+GET /api/unisat/blockchain/info    → { blockHeight, blockHash, network }
 ```
 
 ---
@@ -253,52 +278,41 @@ POST /auth/verify             # Submit signature → JWT
 POST /auth/refresh            # Refresh token
 ```
 
-### RFQ (Borrower)
+### RFQ
 ```
-POST   /rfqs                  # Create RFQ { collateral_btc, amount_usd, term_days }
+POST   /rfqs                  # Create RFQ { collateralBtc, amountUsd, termDays }
 GET    /rfqs/:id              # RFQ detail + offers
+POST   /rfqs/:id/offers       # Submit offer { lenderPubkey, rateApr }
+DELETE /rfqs/:id/offers/:oid  # Withdraw offer
 POST   /rfqs/:id/accept       # Accept offer { offerId }
 DELETE /rfqs/:id              # Cancel RFQ
 ```
 
-### RFQ (Lender — whitelisted only)
+### Loans
 ```
-GET    /rfqs/feed             # Subscribe to RFQ stream (WS upgrade)
-POST   /rfqs/:id/offers       # Submit offer { rate_apr }
-DELETE /rfqs/:id/offers/:oid  # Withdraw offer
-```
-
-### Origination
-```
-GET    /loans/:id/psbt/origination      # Get unsigned origination PSBT
-POST   /loans/:id/psbt/origination/sign # Submit signature (each party)
-GET    /loans/:id/psbt/liquidation      # Get liquidation PSBT for lender pre-sign
-POST   /loans/:id/psbt/liquidation/sign # Lender submits pre-signature
-```
-
-### Loan
-```
-GET    /loans                  # My loans (filter: role, status)
-GET    /loans/:id              # Loan detail + state + timeline
-GET    /loans/:id/psbt/repay   # Get unsigned repayment PSBT
-POST   /loans/:id/psbt/repay/sign  # Borrower submits repayment sig
-POST   /loans/:id/forfeit      # Lender requests forfeiture (post-default only)
-GET    /loans/:id/psbt/forfeit  # Get forfeiture PSBT
-POST   /loans/:id/psbt/forfeit/sign # Lender signs forfeiture
+GET    /loans                           # My loans
+GET    /loans/:id                       # Loan detail
+GET    /loans/:id/repayment-quote       # Principal + accrued interest
+GET    /loans/:id/psbt/origination      # Get (or build) origination PSBT
+POST   /loans/:id/psbt/origination/sign # Submit borrower/lender sig
+GET    /loans/:id/psbt/repay            # Get repayment PSBT (Bound pre-signed)
+POST   /loans/:id/psbt/repay/sign       # Borrower submits sig → finalize + broadcast
+POST   /loans/:id/forfeit               # Execute forfeiture (DEFAULTED only)
 ```
 
 ### Dashboard
 ```
-GET    /dashboard/summary      # { activeLoanCount, totalBorrowed, totalLent, atRiskLoans }
-GET    /dashboard/loans        # Paginated loan list
+GET /dashboard/summary        # { activeLoanCount, totalBorrowed, atRiskLoans }
+GET /dashboard/loans          # Paginated loan list
 ```
 
-### Internal (Bound Ops)
+### Wallet & Chain
 ```
-GET    /internal/review-queue           # Loans pending manual review (≥ 0.20 BTC)
-POST   /internal/review-queue/:id/approve # Approve forfeiture/liquidation
-POST   /internal/review-queue/:id/reject  # Reject with reason
-GET    /internal/price-feeds            # Current price feed status
+GET /api/unisat/balance?address=        # BTC + bUSD + block height
+GET /api/unisat/balance/btc?address=    # BTC satoshi
+GET /api/unisat/balance/rune?address=   # Rune balance
+GET /api/unisat/blockchain/info         # Current block height
+GET /api/radfi/balance?address=         # Trading Wallet balance
 ```
 
 ---
@@ -306,279 +320,123 @@ GET    /internal/price-feeds            # Current price feed status
 ## Liquidation Engine
 
 ```
-┌────────────────────────────────────────────────┐
-│              Liquidation Engine                  │
-├────────────────────────────────────────────────┤
-│                                                 │
-│  1. Price Poller (every 60s)                    │
-│     → Query 5 feeds (dev decision on sources)   │
-│     → Mix of aggregators + exchange APIs        │
-│     → Require ≥ 3/5 feeds responsive            │
-│     → Cache in Redis                            │
-│                                                 │
-│  2. LTV Scanner (every price update)            │
-│     → For each ACTIVE + GRACE loan:             │
-│       ltv = debt / (collateral × btc_price)     │
-│       debt = principal + fee + accrued_interest  │
-│     → If ltv ≥ 95%: trigger liquidation check   │
-│                                                 │
-│  3. Oracle Differential Check                   │
-│     → Compare all 5 feed prices                 │
-│     → Max diff between any two feeds ≤ 0.25%?   │
-│       YES → proceed to execution                │
-│       NO  → wait 5 min, re-query all feeds      │
-│             repeat until ≤ 0.25% or LTV < 95%   │
-│     → If collateral ≥ 0.20 BTC: manual review   │
-│       + Discord alert before execution           │
-│                                                 │
-│  4. Execution                                   │
-│     → Oracle check passed + LTV still ≥ 95%     │
-│     → Retrieve pre-signed liquidation PSBT      │
-│     → Bound co-signs                            │
-│     → Broadcast                                 │
-│     → Notify borrower                           │
-│                                                 │
-└────────────────────────────────────────────────┘
+Price poll (60s)
+    → 5 feeds → median → cache
+
+LTV scan (per price update)
+    → For each ACTIVE + GRACE loan:
+      ltv = totalRepay / (collateralBtc × btcPrice) × 100
+    → If ltv ≥ 95%: flag IN_DANGER + start oracle check
+
+Oracle differential check
+    → Max diff between any 2 feeds ≤ 0.25%?
+      YES → proceed
+      NO  → defer 5 min, retry
+    → Collateral ≥ 0.20 BTC → emit REVIEW_REQUIRED (manual)
+    → Re-check LTV after oracle check (price may have recovered)
+
+Execution
+    → Retrieve pre-signed PSBT (stored at origination)
+    → Finalize (Bound sig already present)
+    → Broadcast via RadFi
+    → Transition loan → LIQUIDATED
 ```
 
 ---
 
-## Realtime Events (WebSocket)
-
-### Connection
-```
-wss://api.bound.fi/ws?token=<jwt>
-```
-
-### RFQ Events
-```
-rfq:offer_received       { rfqId, offer }
-rfq:offer_withdrawn      { rfqId, offerId }
-rfq:accepted             { rfqId, offerId, loanId }
-rfq:expired              { rfqId }
-```
-
-### Loan Events
-```
-loan:origination_ready    { loanId, psbtHex }
-loan:origination_signed   { loanId, party }
-loan:activated            { loanId, escrowAddress, txid }
-loan:repayment_pending    { loanId, txid }
-loan:repaid               { loanId, txid }
-loan:in_danger            { loanId, currentLtv, btcPrice }
-loan:liquidated           { loanId, txid }
-loan:grace_started        { loanId, graceExpiresAt }
-loan:defaulted            { loanId }
-loan:forfeiture_pending   { loanId, txid }
-loan:forfeited            { loanId, txid }
-```
-
-### Lender Feed
-```
-rfq:new                   { rfqId, amount, term }
-```
-
----
-
-## MongoDB Schema
-
-### users
-```javascript
-{
-  _id: ObjectId,
-  address: "bc1...",             // Trading Wallet address
-  pubkey: Buffer,
-  roles: ["borrower", "lender"],
-  tradingWalletId: String,
-  isWhitelistedLender: Boolean,  // Manual approval required to lend
-  createdAt: Date
-}
-```
-
-### rfqs
-```javascript
-{
-  _id: ObjectId,
-  borrower: ObjectId,
-  collateralBtc: Decimal128,    // BTC amount borrower offers as collateral
-  amountUsd: Decimal128,         // Loan amount requested (creates implied LTV)
-  impliedLtv: Number,           // Calculated: amountUsd / (collateralBtc * btcPrice)
-  termDays: Number,
-  status: "open" | "offers_received" | "selected" | "cancelled" | "expired",
-  offers: [{
-    _id: ObjectId,
-    lender: ObjectId,
-    lenderPubkey: Buffer,
-    rateApr: Number,             // Only field lender sets
-    status: "pending" | "accepted" | "withdrawn",
-    createdAt: Date
-  }],
-  selectedOffer: ObjectId,
-  expiresAt: Date,
-  createdAt: Date
-}
-```
+## MongoDB Schema (key fields)
 
 ### loans
 ```javascript
 {
-  _id: ObjectId,
-  rfq: ObjectId,
-  borrower: ObjectId,
-  lender: ObjectId,
   escrow: {
-    address: String,
-    redeemScript: Buffer,
-    borrowerPubkey: Buffer,
-    lenderPubkey: Buffer,
-    boundPubkey: Buffer,
+    address: String,          // P2TR taproot address
+    redeemScript: String,     // legacy P2WSH (unused for taproot)
+    borrowerPubkey: String,   // 33-byte compressed hex
+    lenderPubkey: String,
+    boundPubkey: String,
     fundingTxid: String,
-    fundingVout: Number
+    fundingVout: Number,
+    taprootData: String,      // JSON: { leafBorrowerLender, leafBorrowerBound, leafLenderBound }
   },
   terms: {
-    principalUsd: Decimal128,
-    originationFee: Decimal128,
-    totalDebt: Decimal128,
-    collateralBtc: Decimal128,
+    principalUsd: Number,
+    originationFee: Number,
+    totalDebt: Number,
+    collateralBtc: Number,
     rateApr: Number,
     termDays: Number,
-    graceDays: 7,
+    graceDays: Number,
+    // Block height enforcement
+    originationBlock: Number,
+    termExpiresBlock: Number,
+    graceExpiresBlock: Number,
+    // Timestamps for display only
     originatedAt: Date,
     termExpiresAt: Date,
-    graceExpiresAt: Date
+    graceExpiresAt: Date,
   },
-  state: "origination_pending" | "active" | "grace" |
-         "repaid" | "liquidated" | "defaulted" | "forfeited" | "cancelled",
   liquidation: {
-    preSignedPsbt: Buffer,
+    preSignedPsbt: String,    // Bound's pre-signed liquidation PSBT (hex)
     inDangerSince: Date,
     lastLtv: Number,
-    lastPriceCheck: Date
+    lastPriceCheck: Date,
   },
-  timeline: [{
-    event: String,
-    txid: String,
-    timestamp: Date,
-    metadata: Object
-  }],
-  metadata: {
-    encoded: Buffer,
-    format: String
+  originationPsbt: String,    // Unsigned origination PSBT (hex) during signing
+  signatures: {
+    borrower: Boolean,
+    lender: Boolean,
+    bound: Boolean,
   },
   requiresManualReview: Boolean,
-  createdAt: Date,
-  updatedAt: Date
+  state: ELoanState,
+  timeline: [{ event, timestamp, metadata }],
 }
 ```
 
-### price_logs
-```javascript
-{
-  _id: ObjectId,
-  loanId: ObjectId,
-  type: "routine" | "initial_breach" | "confirmation_recheck",
-  feeds: {
-    coinmarketcap: { price: Number, timestamp: Date, ok: Boolean },
-    coingecko:     { price: Number, timestamp: Date, ok: Boolean },
-    binance:       { price: Number, timestamp: Date, ok: Boolean },
-    hyperliquid:   { price: Number, timestamp: Date, ok: Boolean },
-    feed5:         { price: Number, timestamp: Date, ok: Boolean }
-  },
-  medianPrice: Number,
-  responsiveFeeds: Number,
-  calculatedLtv: Number,
-  decision: "healthy" | "in_danger" | "liquidate" | "deferred",
-  timestamp: Date
-}
-```
+---
 
-### events
-```javascript
-{
-  _id: ObjectId,
-  loanId: ObjectId,
-  type: String,
-  actor: "borrower" | "lender" | "bound" | "system",
-  data: Object,
-  timestamp: Date
-}
-```
+## Configuration
 
-### Indexes
-```
-users:       { address: 1 } unique
-rfqs:        { status: 1, createdAt: -1 }, { borrower: 1 }, { expiresAt: 1 }
-loans:       { state: 1 }, { borrower: 1 }, { lender: 1 },
-             { "escrow.address": 1 } unique,
-             { "terms.termExpiresAt": 1 }, { "terms.graceExpiresAt": 1 },
-             { requiresManualReview: 1, state: 1 }
-price_logs:  { loanId: 1, timestamp: -1 }, { type: 1, timestamp: -1 }
-events:      { loanId: 1, timestamp: -1 }
+```env
+# App
+APP_PORT=3000
+JWT_SECRET=<32+ char random>
+API_SECRET_KEY=<32+ char random>
+API_SECRET_WORD=bound-mvp
+
+# Bitcoin
+BITCOIN_NETWORK=signet
+BOUND_PUBKEY=<33-byte compressed hex>
+BOUND_PRIVATE_KEY=<WIF format>
+
+# External APIs
+RADFI_BASE_URL=https://signet.ums.radfi.co
+UNISAT_BASE_URL=https://open-api-signet.unisat.io
+UNISAT_API_KEY=<your unisat api key>
+BUSD_RUNE_ID=<rune id e.g. 123:45>
+
+# Lending
+ORIGINATION_FEE_PCT=0.2
+GRACE_PERIOD_DAYS=7
+LIQUIDATION_LTV_PCT=95
+MAX_LTV_PCT=80
+MANUAL_REVIEW_BTC_THRESHOLD=0.20
+ON_CHAIN_CONFIRMATION_THRESHOLD=3
 ```
 
 ---
 
-## Queue Jobs (BullMQ)
+## Build Status
 
-| Job | Schedule | Action |
+| Phase | Scope | Status |
 |---|---|---|
-| `rfq:expire` | Per RFQ, at expiresAt | Cancel stale RFQs |
-| `origination:timeout` | Per loan, at signing deadline | Cancel if not all signed |
-| `loan:term-expiry` | Per loan, at termExpiresAt | ACTIVE → GRACE |
-| `loan:grace-expiry` | Per loan, at graceExpiresAt | GRACE → DEFAULTED |
-| `price:poll` | Repeating, every 60s | Fetch 5 feeds, cache median |
-| `ltv:scan` | On every price update | Check all active loans |
-| `ltv:oracle-check` | Per loan, on LTV breach | Oracle differential check (retry every 5 min if >0.25%) |
-| `loan:notify-borrower` | Per event | Grace warning, in-danger, liquidation |
-| `review:discord-alert` | On ≥0.20 BTC trigger | Post to Discord for manual review |
+| Phase 1 | Escrow — P2TR tapscript 2-of-3, PSBT builders, BoundSigner | ✅ Done |
+| Phase 2 | API — auth, RFQ, loan state machine, signing endpoints | ✅ Done |
+| Phase 3 | Liquidation + Indexer — price feeds, LTV monitor, block height expiry | ✅ Done |
+| Phase 4 | Realtime + Notifications — WebSocket, BullMQ jobs | ✅ Done |
+| Phase 5 | Frontend — borrower flow, LTV gauge, active loans | ✅ Done |
+| Phase 6 | External integrations — RadFi + UniSat signet | ✅ Done |
+| Phase 7 | Deploy — Cloudflare tunnel, Vercel, pm2 | 🔄 In progress |
 
----
-
-## Security & Edge Cases
-
-| Risk | Mitigation |
-|---|---|
-| Bound offline (active loan) | Path 3: Borrower + Lender can cooperate directly |
-| Bound offline (forfeiture) | Lender stuck → Bound HA infra, redundant signing |
-| Price feed failure | Min 3/5 feeds required, defer liquidation if fewer |
-| Premature liquidation | Oracle differential check (≤0.25% between feeds), retry every 5 min |
-| Chain reorg | Wait N confirmations before state transitions |
-| Partial bUSD on repayment | Reject — no partial repay in v1 |
-| Large collateral seizure | Manual review ≥ 0.20 BTC + Discord alert |
-| Origination timeout | Cancel cleanly, no risk (unsigned PSBT) |
-| Fake lender offers | Lender whitelisting + Trading Wallet balance check |
-| Bound + Lender collusion | Residual risk — documented in trust model |
-
----
-
-## Configuration Parameters
-
-| Parameter | Default | Status |
-|---|---|---|
-| `origination_fee_pct` | TBD | Awaiting business decision |
-| `grace_period_days` | 7 | Confirmed |
-| `liquidation_ltv_pct` | 95% | Confirmed |
-| `oracle_differential_threshold_pct` | 0.25% | Confirmed |
-| `oracle_retry_wait_seconds` | 300 | Confirmed |
-| `min_price_feeds_required` | TBD | Needs engineering input |
-| `rfq_expiry_seconds` | TBD | Needs product input |
-| `origination_signing_timeout_seconds` | TBD | Needs product input |
-| `min_loan_amount_usd` | TBD | Needs product input |
-| `max_loan_amount_usd` | TBD | Needs product input |
-| `min_loan_term_days` | TBD | Needs product input |
-| `max_loan_term_days` | TBD | Needs product input |
-| `on_chain_confirmation_threshold` | TBD | Needs engineering input |
-| `interest_precision_decimals` | TBD | Needs engineering input |
-
----
-
-## Build Order
-
-| Phase | Scope | Timeline |
-|---|---|---|
-| Phase 1 | Escrow Core — 2-of-3 multisig, PSBT construction, metadata encoder, tests | Week 1-2 |
-| Phase 2 | API + State Machine — auth, RFQ, loan lifecycle, PSBT signing endpoints | Week 3-4 |
-| Phase 3 | Liquidation + Indexer — price feeds, LTV monitor, chain watcher | Week 5-6 |
-| Phase 4 | Realtime + Notifications — WebSocket events, borrower alerts, timer jobs | Week 7 |
-| Phase 5 | Frontend — borrower flow, lender flow, dashboards | Week 8-9 |
-| Phase 6 | Testnet + Security — signet deploy, e2e testing, security audit | Week 10 |
+**Tests:** 110 BE (Jest) + 47 FE (Vitest + RTL) = 157 total, all passing.
