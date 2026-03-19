@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Types } from 'mongoose';
 import { LiquidationService } from './liquidation.service';
 import { LoanService } from '../loan/loan.service';
+import { LoanSigningService } from '../loan/loan-signing.service';
 import { PriceFeedService } from '../price-feed/price-feed.service';
 import { ELoanState } from '../../database/entities';
 import { EVENT, ENV_REGISTER } from '../../commons/constants';
@@ -29,6 +30,9 @@ const mockPriceFeedService = () => ({
   checkOracleDifferential: jest.fn(),
 });
 
+const mockLoanSigningService = {
+  executeLiquidation: jest.fn().mockResolvedValue('mock-txid-abc123'),
+};
 const mockEventEmitter = { emit: jest.fn() };
 
 const mockConfigService = {
@@ -75,6 +79,7 @@ describe('LiquidationService', () => {
       providers: [
         LiquidationService,
         { provide: LoanService, useValue: loanService },
+        { provide: LoanSigningService, useValue: mockLoanSigningService },
         { provide: PriceFeedService, useValue: priceFeedService },
         { provide: EventEmitter2, useValue: mockEventEmitter },
         { provide: ConfigService, useValue: mockConfigService },
@@ -213,17 +218,13 @@ describe('LiquidationService', () => {
       expect(loanService.transitionState).not.toHaveBeenCalled();
     });
 
-    it('should transition to LIQUIDATED for auto-liquidation (oracle OK, LTV breached, collateral < 0.20 BTC)', async () => {
+    it('should call loanSigningService.executeLiquidation for auto-liquidation (oracle OK, LTV breached, collateral < 0.20 BTC)', async () => {
       priceFeedService.checkOracleDifferential.mockResolvedValue({ isOk: true, maxDifferentialPct: 0.1, feeds: [] });
       priceFeedService.getBtcPrice.mockResolvedValue(84000); // 0.1 * 84000 = 8400 → LTV ≈ 95.2%
 
       await service.executeLiquidation(loanId);
 
-      expect(loanService.transitionState).toHaveBeenCalledWith(
-        loanId,
-        ELoanState.LIQUIDATED,
-        expect.any(Object),
-      );
+      expect(mockLoanSigningService.executeLiquidation).toHaveBeenCalledWith(loanId);
     });
   });
 });

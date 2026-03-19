@@ -2,13 +2,17 @@ import { Controller, Get, Post, Body, Param, Query, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { GeneralController } from '../../commons/base-module';
 import { LoanService } from './loan.service';
+import { LoanSigningService } from './loan-signing.service';
 import { SignPsbtDto, LoanQueryDto } from './dto/loan.dto';
 
 @ApiTags('Loans')
 @ApiBearerAuth()
 @Controller('loans')
 export class LoanController extends GeneralController {
-  constructor(private readonly loanService: LoanService) {
+  constructor(
+    private readonly loanService: LoanService,
+    private readonly loanSigningService: LoanSigningService,
+  ) {
     super();
   }
 
@@ -27,39 +31,60 @@ export class LoanController extends GeneralController {
   }
 
   @Get(':id/repayment-quote')
-  @ApiOperation({ summary: 'Get repayment quote (principal + interest)' })
+  @ApiOperation({ summary: 'Get repayment quote (principal + accrued interest)' })
   async getRepaymentQuote(@Param('id') id: string) {
     const loan = await this.loanService.findByIdOrThrow(id);
     const quote = this.loanService.calculateRepaymentAmount(loan);
     return this.response({ data: quote });
   }
 
+  @Get(':id/psbt/origination')
+  @ApiOperation({ summary: 'Get (or build) the unsigned origination PSBT for a loan' })
+  async getOriginationPsbt(@Param('id') loanId: string) {
+    const loan = await this.loanService.findByIdOrThrow(loanId);
+
+    let psbtHex = (loan as any).originationPsbt;
+    if (!psbtHex) {
+      psbtHex = await this.loanSigningService.buildAndStoreOriginationPsbt(loanId);
+    }
+
+    return this.response({ data: { loanId, psbtHex } });
+  }
+
   @Post(':id/psbt/origination/sign')
-  @ApiOperation({ summary: 'Submit borrower signature for origination PSBT' })
+  @ApiOperation({ summary: 'Submit borrower or lender signature for origination PSBT' })
   async signOrigination(
     @Param('id') loanId: string,
     @Body() dto: SignPsbtDto,
-    @Req() req: { user: { userId: string } },
+    @Req() req: { user: { userId: string; roles: string[] } },
   ) {
-    // TODO: determine party from req.user vs loan.borrower/lender
-    const loan = await this.loanService.recordSignature(loanId, 'borrower', dto.signedPsbtHex);
-    return this.response({ data: loan });
+    const loan = await this.loanService.findByIdOrThrow(loanId);
+    const party = loan.borrower.toString() === req.user.userId ? 'borrower' : 'lender';
+    const result = await this.loanSigningService.recordOriginationSignature(loanId, party, dto.signedPsbtHex);
+    return this.response({ data: result });
+  }
+
+  @Get(':id/psbt/repay')
+  @ApiOperation({ summary: 'Get repayment PSBT (pre-signed by Bound, borrower signs and submits)' })
+  async getRepaymentPsbt(@Param('id') loanId: string) {
+    const psbtHex = await this.loanSigningService.buildRepaymentPsbt(loanId);
+    return this.response({ data: { loanId, psbtHex } });
   }
 
   @Post(':id/psbt/repay/sign')
-  @ApiOperation({ summary: 'Submit signed repayment PSBT' })
+  @ApiOperation({ summary: 'Submit borrower-signed repayment PSBT — finalizes and broadcasts' })
   async signRepayment(
     @Param('id') loanId: string,
     @Body() dto: SignPsbtDto,
   ) {
-    // TODO: verify PSBT, combine sigs, broadcast
-    return this.response({ data: { loanId, status: 'repayment_pending' } });
+    const txid = await this.loanSigningService.finalizeRepayment(loanId, dto.signedPsbtHex);
+    return this.response({ data: { loanId, txid, status: 'repaid' } });
   }
 
   @Post(':id/forfeit')
-  @ApiOperation({ summary: 'Request forfeiture (lender, post-default only)' })
+  @ApiOperation({ summary: 'Execute forfeiture (Bound+Lender, post-default only)' })
   async requestForfeiture(@Param('id') loanId: string) {
-    // TODO: validate defaulted state, build forfeiture PSBT
-    return this.response({ data: { loanId, status: 'forfeiture_requested' } });
+    const txid = await this.loanSigningService.executeForfeiture(loanId);
+    return this.response({ data: { loanId, txid, status: 'forfeited' } });
   }
 }

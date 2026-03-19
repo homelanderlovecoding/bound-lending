@@ -11,3 +11,4 @@ import { PriceFeedModule } from '../price-feed/price-feed.module';
   exports: [LiquidationService],
 })
 export class LiquidationModule {}
+// Note: LoanSigningService is exported from LoanModule and available via injection

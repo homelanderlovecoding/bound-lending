@@ -5,6 +5,7 @@ import { ENV_REGISTER, EVENT, RESPONSE_CODE } from '../../commons/constants';
 import { ILendingConfig } from '../../commons/types';
 import { LoanEntity, ELoanState } from '../../database/entities';
 import { LoanService } from '../loan/loan.service';
+import { LoanSigningService } from '../loan/loan-signing.service';
 import { PriceFeedService } from '../price-feed/price-feed.service';
 import { ELiquidationAction, ILtvCheckResult } from './liquidation.type';
 
@@ -15,6 +16,7 @@ export class LiquidationService {
 
   constructor(
     private readonly loanService: LoanService,
+    private readonly loanSigningService: LoanSigningService,
     private readonly priceFeedService: PriceFeedService,
     private readonly eventEmitter: EventEmitter2,
     private readonly configService: ConfigService,
@@ -189,11 +191,19 @@ export class LiquidationService {
   private async performLiquidation(loanId: string, ltv: number, btcPrice: number): Promise<void> {
     this.logger.log(`Executing liquidation for loan ${loanId} (LTV: ${ltv.toFixed(1)}%)`);
 
-    // TODO: Retrieve pre-signed liquidation PSBT, co-sign with Bound key, broadcast
-    await this.loanService.transitionState(loanId, ELoanState.LIQUIDATED, {
-      ltv,
-      btcPrice,
-      liquidatedAt: new Date(),
-    });
+    try {
+      const txid = await this.loanSigningService.executeLiquidation(loanId);
+      this.logger.log(`Liquidation executed for loan ${loanId}, txid: ${txid}`);
+    } catch (err) {
+      this.logger.error(`Liquidation execution failed for loan ${loanId}: ${err}`);
+      // Emit for manual review on failure
+      this.eventEmitter.emit(EVENT.REVIEW_REQUIRED, {
+        loanId,
+        reason: 'liquidation_failed',
+        ltv,
+        btcPrice,
+        error: String(err),
+      });
+    }
   }
 }

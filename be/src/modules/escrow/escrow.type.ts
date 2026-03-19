@@ -1,4 +1,5 @@
 import { Network } from 'bitcoinjs-lib';
+import { Taptree } from 'bitcoinjs-lib/src/types';
 
 export interface IMultisigResult {
   address: string;
@@ -8,6 +9,28 @@ export interface IMultisigResult {
 
 export interface IMultisigParams {
   borrowerPubkey: string;
+  lenderPubkey: string;
+  boundPubkey: string;
+  network?: Network;
+}
+
+/** Tapscript 2-of-3 multisig result */
+export interface ITaprootMultisigResult {
+  address: string;
+  /** x-only pubkeys sorted */
+  borrowerXOnly: Buffer;
+  lenderXOnly: Buffer;
+  boundXOnly: Buffer;
+  /** Script leaves */
+  leafBorrowerLender: Buffer;
+  leafBorrowerBound: Buffer;
+  leafLenderBound: Buffer;
+  scriptTree: Taptree;
+  network: Network;
+}
+
+export interface ITaprootMultisigParams {
+  borrowerPubkey: string;  // 33-byte compressed hex
   lenderPubkey: string;
   boundPubkey: string;
   network?: Network;
@@ -28,9 +51,21 @@ export interface IOriginationPsbtParams {
   borrowerAddress: string;
   boundAddress: string;
   multisigAddress: string;
-  redeemScript: Buffer;
+  // P2WSH params (legacy)
+  redeemScript?: Buffer;
+  // P2TR params
+  taprootMultisig?: ITaprootMultisigResult;
   network?: Network;
   metadata?: Buffer;
+}
+
+export interface ITaprootPsbtParams {
+  multisigUtxo: IUtxoInput;
+  taprootMultisig: ITaprootMultisigResult;
+  /** Which leaf to spend: 'borrower_lender' | 'borrower_bound' | 'lender_bound' */
+  spendLeaf: 'borrower_lender' | 'borrower_bound' | 'lender_bound';
+  outputAddress: string;
+  network?: Network;
 }
 
 export interface IRepaymentPsbtParams {

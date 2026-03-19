@@ -17,11 +17,14 @@ export interface IRadFiUtxo {
   vout: number;
   satoshi: number;
   amount: string;
+  address: string;
+  scriptPk: string;
   runes: IRadFiRuneBalance[];
   confirmations: number;
   isAvailable: boolean;
   isSpent: boolean;
-  scriptPk: string;
+  isBroadcast: boolean;
+  fromAddress: string;
 }
 
 export interface IRadFiBalanceResult {
