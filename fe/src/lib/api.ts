@@ -61,8 +61,8 @@ export const rfq = {
       body: JSON.stringify(data),
     }),
   get: (id: string) => request<import('./types').Rfq>(`/rfqs/${id}`),
-  submitOffer: (rfqId: string, data: { lenderPubkey: string; rateApr: number }) =>
-    request<import('./types').Rfq>(`/rfqs/${rfqId}/offers`, {
+  submitOffer: (rfqId: string, data: { lenderPubkey: string; rateApr: number; walletBalanceBusd?: number }) =>
+    request<{ data: import('./types').Rfq; message: string }>(`/rfqs/${rfqId}/offers`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),

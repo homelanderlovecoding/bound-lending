@@ -34,6 +34,12 @@ export class SubmitOfferDto {
   @IsNumber()
   @Min(0)
   rateApr: number;
+
+  @ApiPropertyOptional({ description: 'Lender bUSD balance for coverage check' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  walletBalanceBusd?: number;
 }
 
 export class AcceptOfferDto {

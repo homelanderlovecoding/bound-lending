@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConfigService } from '@nestjs/config';
@@ -8,11 +8,12 @@ import { TABLE_NAME, EVENT, RESPONSE_CODE, ENV_REGISTER } from '../../commons/co
 import { ILendingConfig } from '../../commons/types';
 import { RfqEntity, ERfqStatus, ERfqOfferStatus } from '../../database/entities';
 import { UserService } from '../user/user.service';
-import { IRfqCreateParams, IRfqOfferParams } from './rfq.type';
+import { IRfqCreateParams, IRfqOfferParams, IRfqAdjustOfferParams } from './rfq.type';
 
 @Injectable()
 export class RfqService extends BaseService<RfqEntity> {
   private readonly lendingConfig: ILendingConfig;
+  private readonly logger = new Logger(RfqService.name);
 
   constructor(
     @InjectModel(TABLE_NAME.RFQ)
@@ -120,14 +121,37 @@ export class RfqService extends BaseService<RfqEntity> {
   }
 
   /**
-   * Submit an offer to an RFQ (lender responds with rate).
+   * Submit or update an offer on an RFQ.
+   * Rules:
+   * - Borrower cannot be the lender on their own RFQ
+   * - Lender must have enough bUSD balance to cover the loan amount
+   * - Only 1 active offer per lender per RFQ (update rate if already submitted)
    */
-  async submitOffer(params: IRfqOfferParams): Promise<RfqEntity> {
-    // MVP: auto-whitelist any connected lender
-    // TODO: add proper KYC/whitelist flow post-MVP
+  async submitOffer(params: IRfqOfferParams): Promise<{ rfq: RfqEntity; isUpdate: boolean }> {
     const rfq = await this.findByIdOrThrow(params.rfqId);
     this.validateRfqAcceptsOffers(rfq);
+    this.validateBorrowerNotLender(rfq, params.lenderId);
 
+    if (params.walletBalanceBusd !== undefined) {
+      this.validateLenderBalance(rfq.amountUsd, params.walletBalanceBusd);
+    }
+
+    // Check if lender already has a pending offer → update rate instead of adding new
+    const existingIdx = rfq.offers.findIndex(
+      (o) => o.lender.toString() === params.lenderId && o.status === ERfqOfferStatus.PENDING,
+    );
+
+    if (existingIdx !== -1) {
+      // Update existing offer rate
+      const updated = await this.findOneAndUpdate(
+        { _id: params.rfqId, 'offers.lender': new Types.ObjectId(params.lenderId), 'offers.status': ERfqOfferStatus.PENDING },
+        { $set: { 'offers.$.rateApr': params.rateApr } },
+      );
+      this.logger.log(`Lender ${params.lenderId} adjusted offer on RFQ ${params.rfqId} → ${params.rateApr}% APR`);
+      return { rfq: updated!, isUpdate: true };
+    }
+
+    // New offer
     const offer = {
       _id: new Types.ObjectId(),
       lender: new Types.ObjectId(params.lenderId),
@@ -147,7 +171,7 @@ export class RfqService extends BaseService<RfqEntity> {
       offerId: offer._id.toString(),
     });
 
-    return updated!;
+    return { rfq: updated!, isUpdate: false };
   }
 
   /**
@@ -218,6 +242,20 @@ export class RfqService extends BaseService<RfqEntity> {
     const isWhitelisted = await this.userService.isWhitelistedLender(lenderId);
     if (!isWhitelisted) {
       throw new ForbiddenException(RESPONSE_CODE.user.notWhitelistedLender);
+    }
+  }
+
+  private validateBorrowerNotLender(rfq: RfqEntity, lenderId: string): void {
+    if (rfq.borrower.toString() === lenderId) {
+      throw new ForbiddenException('You cannot lend on your own RFQ');
+    }
+  }
+
+  private validateLenderBalance(loanAmountUsd: number, lenderBalanceBusd: number): void {
+    if (lenderBalanceBusd < loanAmountUsd) {
+      throw new BadRequestException(
+        `Insufficient bUSD balance. Need ${loanAmountUsd} bUSD but only ${lenderBalanceBusd.toFixed(2)} available.`
+      );
     }
   }
 

@@ -66,13 +66,14 @@ export class RfqController extends GeneralController {
     @Body() dto: SubmitOfferDto,
     @Req() req: { user: { userId: string } },
   ) {
-    const rfq = await this.rfqService.submitOffer({
+    const { rfq, isUpdate } = await this.rfqService.submitOffer({
       rfqId,
       lenderId: req.user.userId,
       lenderPubkey: dto.lenderPubkey,
       rateApr: dto.rateApr,
+      walletBalanceBusd: dto.walletBalanceBusd,
     });
-    return this.response({ data: rfq });
+    return this.response({ data: rfq, message: isUpdate ? 'Offer updated' : 'Offer submitted' });
   }
 
   @Delete(':id/offers/:offerId')

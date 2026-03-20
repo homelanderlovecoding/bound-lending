@@ -25,11 +25,18 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
   const { wallet } = useAuth();
   const { data: openRfqs, isLoading, mutate } = useOpenRfqs();
   const [selectedRfq, setSelectedRfq] = useState<Rfq | null>(null);
-  const [rateApr, setRateApr] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Find if current user already has an offer on selected RFQ
+  const myExistingOffer = selectedRfq && wallet
+    ? selectedRfq.offers?.find((o) => o.lender === wallet.address && o.status === 'pending')
+    : null;
+
+  // Pre-fill rate if editing
+  const [rateApr, setRateApr] = useState('');
+  
   const handleSubmitOffer = async () => {
     if (!wallet) { setError('Connect your wallet to submit an offer'); return; }
     if (!selectedRfq || !rateApr) return;
@@ -39,11 +46,12 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
     setError('');
     setSubmitting(true);
     try {
-      await rfqApi.submitOffer(selectedRfq._id, { lenderPubkey: wallet.publicKey, rateApr: rate });
-      setSuccess(`Offer submitted at ${rate}% APR`);
+      const res = await rfqApi.submitOffer(selectedRfq._id, { lenderPubkey: wallet.publicKey, rateApr: rate });
+      const msg = (res as any)?.message ?? (myExistingOffer ? 'Offer updated' : 'Offer submitted');
+      setSuccess(`${msg} at ${rate}% APR`);
       setSelectedRfq(null);
       setRateApr('');
-      mutate(); // Refresh open RFQs
+      mutate();
     } catch (err: any) {
       setError(err.message || 'Failed to submit offer');
     } finally {
@@ -134,11 +142,23 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
                     </div>
                   </div>
 
-                  {r.offers?.length > 0 && (
-                    <div className="mt-2 text-[11px] text-[var(--text-muted)]">
-                      {r.offers.filter(o => o.status === 'pending').length} offer(s) already submitted
-                    </div>
-                  )}
+                  {(() => {
+                    const myOffer = wallet ? r.offers?.find(o => o.lender === wallet.address && o.status === 'pending') : null;
+                    const otherOffers = r.offers?.filter(o => o.status === 'pending').length ?? 0;
+                    return (
+                      <div className="mt-2 flex items-center gap-2 text-[11px]">
+                        {myOffer && (
+                          <span className="text-[var(--green)]">✓ Your offer: {myOffer.rateApr}% APR</span>
+                        )}
+                        {otherOffers > 0 && !myOffer && (
+                          <span className="text-[var(--text-muted)]">{otherOffers} offer(s) submitted</span>
+                        )}
+                        {otherOffers > 1 && myOffer && (
+                          <span className="text-[var(--text-muted)]">· {otherOffers - 1} other offer(s)</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </button>
               );
             })}
@@ -217,15 +237,25 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
               </div>
             </div>
 
+            {/* Existing offer banner */}
+            {myExistingOffer && (
+              <div className="bg-[rgba(122,143,106,0.12)] border border-[rgba(122,143,106,0.3)] rounded-s px-3 py-2.5 text-[12px] text-[var(--green)] mb-4 flex items-center justify-between">
+                <span>Your current offer: <strong>{myExistingOffer.rateApr}% APR</strong></span>
+                <span className="text-[11px] text-[var(--text-muted)]">Adjust below to update</span>
+              </div>
+            )}
+
             {/* APR input */}
             <div className="mb-4">
-              <div className="text-xs text-[var(--text-muted)] mb-2 font-medium uppercase tracking-wide">Your Rate (APR)</div>
+              <div className="text-xs text-[var(--text-muted)] mb-2 font-medium uppercase tracking-wide">
+                {myExistingOffer ? 'New Rate (APR)' : 'Your Rate (APR)'}
+              </div>
               <div className="relative flex items-center">
                 <input
                   type="text"
                   value={rateApr}
                   onChange={(e) => setRateApr(e.target.value.replace(/[^0-9.]/g, ''))}
-                  placeholder="e.g. 5.0"
+                  placeholder={myExistingOffer ? `Current: ${myExistingOffer.rateApr}%` : 'e.g. 5.0'}
                   className="w-full py-3 pl-4 pr-12 text-xl font-semibold font-headline text-[var(--text-primary)] bg-[var(--bg-tertiary)] border border-[var(--border)] rounded-s outline-none focus:border-[var(--gold-dark)]"
                 />
                 <span className="absolute right-4 text-sm font-semibold text-[var(--text-muted)] pointer-events-none">%</span>
@@ -246,7 +276,7 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
               className="w-full py-3.5 border-none rounded-full text-[15px] font-semibold cursor-pointer font-body bg-[var(--gold-dark)] text-[var(--parchment)] hover:bg-[var(--gold-light)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              Submit Offer
+              {myExistingOffer ? 'Update Offer' : 'Submit Offer'}
             </button>
           </div>
         )}

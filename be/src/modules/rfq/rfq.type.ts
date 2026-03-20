@@ -14,4 +14,11 @@ export interface IRfqOfferParams {
   lenderId: string;
   lenderPubkey: string;
   rateApr: number;
+  walletBalanceBusd?: number; // lender bUSD balance for coverage check
+}
+
+export interface IRfqAdjustOfferParams {
+  rfqId: string;
+  lenderId: string;
+  rateApr: number;
 }
