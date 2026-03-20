@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Delete, Body, Param, Req } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Body, Param, Req, UnauthorizedException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { GeneralController } from '../../commons/base-module';
 import { RfqService } from './rfq.service';
@@ -22,7 +22,8 @@ export class RfqController extends GeneralController {
 
   @Post()
   @ApiOperation({ summary: 'Create a new RFQ (borrower)' })
-  async createRfq(@Body() dto: CreateRfqDto, @Req() req: { user: { userId: string } }) {
+  async createRfq(@Body() dto: CreateRfqDto, @Req() req: { user?: { userId: string } }) {
+    if (!req.user?.userId) throw new UnauthorizedException('Connect your wallet to create a loan request');
     const btcPrice = await this.priceFeedService.getBtcPrice();
     const rfq = await this.rfqService.createRfq({
       borrowerId: req.user.userId,
@@ -62,8 +63,9 @@ export class RfqController extends GeneralController {
   async submitOffer(
     @Param('id') rfqId: string,
     @Body() dto: SubmitOfferDto,
-    @Req() req: { user: { userId: string } },
+    @Req() req: { user?: { userId: string } },
   ) {
+    if (!req.user?.userId) throw new UnauthorizedException('Connect your wallet to submit an offer');
     const rfq = await this.rfqService.submitOffer({
       rfqId,
       lenderId: req.user.userId,
@@ -78,8 +80,9 @@ export class RfqController extends GeneralController {
   async withdrawOffer(
     @Param('id') rfqId: string,
     @Param('offerId') offerId: string,
-    @Req() req: { user: { userId: string } },
+    @Req() req: { user?: { userId: string } },
   ) {
+    if (!req.user?.userId) throw new UnauthorizedException('Unauthorized');
     const rfq = await this.rfqService.withdrawOffer(rfqId, offerId, req.user.userId);
     return this.response({ data: rfq });
   }
@@ -89,8 +92,9 @@ export class RfqController extends GeneralController {
   async acceptOffer(
     @Param('id') rfqId: string,
     @Body() dto: AcceptOfferDto,
-    @Req() req: { user: { userId: string } },
+    @Req() req: { user?: { userId: string } },
   ) {
+    if (!req.user?.userId) throw new UnauthorizedException('Connect your wallet to accept an offer');
     // 1. Update RFQ status → SELECTED
     const rfq = await this.rfqService.acceptOffer(rfqId, dto.offerId, req.user.userId);
 
@@ -130,7 +134,8 @@ export class RfqController extends GeneralController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Cancel RFQ (borrower)' })
-  async cancelRfq(@Param('id') rfqId: string, @Req() req: { user: { userId: string } }) {
+  async cancelRfq(@Param('id') rfqId: string, @Req() req: { user?: { userId: string } }) {
+    if (!req.user?.userId) throw new UnauthorizedException('Unauthorized');
     const rfq = await this.rfqService.cancelRfq(rfqId, req.user.userId);
     return this.response({ data: rfq });
   }
