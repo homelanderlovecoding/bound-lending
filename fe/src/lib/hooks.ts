@@ -40,6 +40,14 @@ export function useMyLoans(role?: string) {
   );
 }
 
+export function useAllActiveLoans() {
+  return useSWR<Loan[]>(
+    'all-active-loans',
+    () => loans.active(),
+    { refreshInterval: 15_000 },
+  );
+}
+
 export function useLoan(id: string | null) {
   return useSWR<Loan>(
     id ? `loan-${id}` : null,

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import clsx from 'clsx';
 import type { Loan } from '@/lib/types';
+import { formatNumber } from '@/lib/utils';
 
 interface ActiveLoansTableProps {
   loans: Loan[];
@@ -14,13 +15,36 @@ interface ActiveLoansTableProps {
 type SortKey = 'status' | 'amount' | 'collateral' | 'rate' | 'ltv' | 'lender' | 'expires';
 
 function statusBadge(state: string) {
-  const map: Record<string, { label: string; className: string }> = {
-    active: { label: 'Active', className: 'bg-[rgba(122,143,106,0.15)] text-[var(--green)]' },
-    grace: { label: 'Grace', className: 'bg-[rgba(255,183,0,0.15)] text-[var(--gold)]' },
-    origination_pending: { label: 'Pending', className: 'bg-[rgba(125,128,135,0.15)] text-[var(--text-muted)]' },
+  const map: Record<string, { label: string; bg: string; text: string }> = {
+    active: { label: 'Active', bg: 'rgba(122,143,106,0.2)', text: 'var(--green)' },
+    grace: { label: 'Grace', bg: 'rgba(229,154,0,0.2)', text: 'var(--gold)' },
+    origination_pending: { label: 'Pending', bg: 'rgba(125,128,135,0.2)', text: 'var(--text-muted)' },
   };
-  const badge = map[state] ?? { label: state, className: 'bg-[rgba(125,128,135,0.15)] text-[var(--text-muted)]' };
-  return <span className={clsx('text-[10px] font-semibold px-1.5 py-0.5 rounded-full', badge.className)}>{badge.label}</span>;
+  const badge = map[state] ?? { label: state, bg: 'rgba(125,128,135,0.2)', text: 'var(--text-muted)' };
+  return (
+    <span
+      className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+      style={{ background: badge.bg, color: badge.text }}
+    >
+      {badge.label}
+    </span>
+  );
+}
+
+function isExpired(expiresAt?: string): boolean {
+  if (!expiresAt) return false;
+  return new Date(expiresAt).getTime() < Date.now();
+}
+
+function formatExpiry(loan: Loan): { text: string; expired: boolean } {
+  const expiresAt = loan.terms.termExpiresAt;
+  if (!expiresAt) return { text: '—', expired: false };
+  const expired = isExpired(expiresAt);
+  if (expired) return { text: 'Expired', expired: true };
+  return {
+    text: new Date(expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    expired: false,
+  };
 }
 
 export default function ActiveLoansTable({ loans, totalCount, totalCollateralBtc }: ActiveLoansTableProps) {
@@ -45,6 +69,7 @@ export default function ActiveLoansTable({ loans, totalCount, totalCollateralBtc
       case 'rate': return (a.terms.rateApr - b.terms.rateApr) * dir;
       case 'ltv': return ((a.liquidation?.lastLtv ?? 0) - (b.liquidation?.lastLtv ?? 0)) * dir;
       case 'status': return a.state.localeCompare(b.state) * dir;
+      case 'lender': return (a.lender ?? '').localeCompare(b.lender ?? '') * dir;
       default: return 0;
     }
   });
@@ -73,30 +98,60 @@ export default function ActiveLoansTable({ loans, totalCount, totalCollateralBtc
           <div className="text-right cursor-pointer select-none" onClick={() => handleSort('collateral')}>Collateral <SortIcon col="collateral" /></div>
           <div className="text-right cursor-pointer select-none" onClick={() => handleSort('rate')}>Rate <SortIcon col="rate" /></div>
           <div className="text-right cursor-pointer select-none" onClick={() => handleSort('ltv')}>LTV <SortIcon col="ltv" /></div>
-          <div>Lender</div>
+          <div className="cursor-pointer select-none" onClick={() => handleSort('lender')}>Lender <SortIcon col="lender" /></div>
           <div className="text-right">Expires</div>
         </div>
 
-        {/* Rows */}
-        {sorted.map((loan) => (
-          <div
-            key={loan._id}
-            className="grid grid-cols-[80px_80px_1fr_1fr_80px_70px_1fr_90px] gap-3 px-5 py-3 text-[12px] border-b border-[var(--border)] hover:bg-[var(--bg-tertiary)] transition-colors duration-100"
-          >
-            <div className="font-medium font-headline text-[var(--text-primary)]">#{loan._id.slice(-4).toUpperCase()}</div>
-            <div>{statusBadge(loan.state)}</div>
-            <div className="text-right font-headline text-[var(--text-primary)]">{loan.terms.principalUsd.toLocaleString()}</div>
-            <div className="text-right font-headline text-[var(--text-primary)]">{loan.terms.collateralBtc.toFixed(4)} BTC</div>
-            <div className="text-right font-headline text-[var(--text-primary)]">{loan.terms.rateApr}%</div>
-            <div className="text-right font-headline" style={{ color: (loan.liquidation?.lastLtv ?? 0) >= 80 ? 'var(--gold)' : 'var(--text-primary)' }}>
-              {loan.liquidation?.lastLtv?.toFixed(1) ?? '—'}%
-            </div>
-            <div className="text-[var(--text-secondary)]">{loan.lender.slice(0, 8)}...</div>
-            <div className="text-right font-headline text-[var(--text-secondary)]">
-              {loan.terms.termExpiresAt ? new Date(loan.terms.termExpiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
-            </div>
+        {/* Empty state */}
+        {sorted.length === 0 && (
+          <div className="px-5 py-8 text-center text-[13px] text-[var(--text-muted)]">
+            No active loans yet
           </div>
-        ))}
+        )}
+
+        {/* Rows */}
+        {sorted.map((loan) => {
+          const loanNum = loan._id.slice(-4).toUpperCase();
+          const ltv = loan.liquidation?.lastLtv ?? 0;
+          const isHighLtv = ltv >= 80;
+          const expiry = formatExpiry(loan);
+
+          return (
+            <div
+              key={loan._id}
+              className="grid grid-cols-[80px_80px_1fr_1fr_80px_70px_1fr_90px] gap-3 px-5 py-3 text-[12px] border-b border-[var(--border)] hover:bg-[var(--bg-tertiary)] transition-colors duration-100"
+            >
+              <div className="font-medium font-headline" style={{ color: 'var(--gold-dark)' }}>
+                #LN-{loanNum}
+              </div>
+              <div>{statusBadge(loan.state)}</div>
+              <div className="text-right font-headline text-[var(--text-primary)]">
+                {formatNumber(loan.terms.principalUsd)}
+              </div>
+              <div className="text-right font-headline text-[var(--text-primary)]">
+                {loan.terms.collateralBtc.toFixed(4)} BTC
+              </div>
+              <div className="text-right font-headline text-[var(--text-primary)]">
+                {loan.terms.rateApr}%
+              </div>
+              <div
+                className="text-right font-headline"
+                style={{ color: isHighLtv ? 'var(--red-text)' : 'var(--text-primary)' }}
+              >
+                {ltv > 0 ? `${ltv.toFixed(1)}%` : '—'}
+              </div>
+              <div className="text-[var(--text-secondary)] truncate">
+                {loan.lender ? (loan.lender.length > 12 ? loan.lender.slice(0, 8) + '...' : loan.lender) : '—'}
+              </div>
+              <div
+                className="text-right font-headline"
+                style={{ color: expiry.expired ? 'var(--red-text)' : 'var(--text-secondary)' }}
+              >
+                {expiry.text}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

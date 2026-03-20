@@ -102,6 +102,15 @@ export class LoanService extends BaseService<LoanEntity> {
   }
 
   /**
+   * Get all platform-wide active loans (public view).
+   */
+  async getAllActiveLoans(): Promise<LoanEntity[]> {
+    return this.find({
+      state: { $in: [ELoanState.ACTIVE, ELoanState.GRACE, ELoanState.ORIGINATION_PENDING] },
+    });
+  }
+
+  /**
    * Calculate current repayment amount for a loan.
    */
   calculateRepaymentAmount(loan: LoanEntity): {

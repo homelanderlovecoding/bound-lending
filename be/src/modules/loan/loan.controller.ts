@@ -16,6 +16,13 @@ export class LoanController extends GeneralController {
     super();
   }
 
+  @Get('active')
+  @ApiOperation({ summary: 'All platform-wide active loans (public)' })
+  async getActiveLoans() {
+    const loans = await this.loanService.getAllActiveLoans();
+    return this.response({ data: loans });
+  }
+
   @Get()
   @ApiOperation({ summary: 'List my loans (filter by role, status)' })
   async getLoans(@Query() query: LoanQueryDto, @Req() req: { user?: { userId: string } }) {

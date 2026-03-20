@@ -10,8 +10,9 @@ import OfferCard from '@/components/OfferCard';
 import LtvGauge from '@/components/LtvGauge';
 import ActiveLoansTable from '@/components/ActiveLoansTable';
 import { calculateLtv, formatNumber, ltvColor, estLiquidationPrice } from '@/lib/utils';
-import { useBtcPrice, useLendingConfig, useRfq, useMyLoans } from '@/lib/hooks';
+import { useBtcPrice, useLendingConfig, useRfq, useMyLoans, useAllActiveLoans } from '@/lib/hooks';
 import { rfq as rfqApi, loans as loansApi } from '@/lib/api';
+import MyLoanCard from '@/components/MyLoanCard';
 import type { Loan, LoanOffer } from '@/lib/types';
 
 type Tab = 'new-loan' | 'active-loans';
@@ -38,6 +39,7 @@ export default function BorrowPage() {
   const { data: lendingConfig, isLoading: configLoading } = useLendingConfig();
   const { data: rfqDetail } = useRfq(rfqId);
   const { data: myLoans } = useMyLoans('borrower');
+  const { data: allActiveLoans } = useAllActiveLoans();
 
   const btcPrice = priceData?.price ?? 0;
   const originationFeePct = lendingConfig?.originationFeePct ?? 0.2;
@@ -347,10 +349,28 @@ export default function BorrowPage() {
         {/* ===== Active Loans Tab ===== */}
         {tab === 'active-loans' && (
           <div className="max-w-[1120px] mx-auto px-6 py-6">
+            {/* My Loans — personal cards */}
+            {filteredActive.length > 0 && (
+              <div className="mb-8">
+                <div className="text-sm font-semibold text-[var(--text-primary)] mb-4">My Loans</div>
+                <div className="flex gap-4 overflow-x-auto">
+                  {filteredActive.map((loan) => (
+                    <MyLoanCard
+                      key={loan._id}
+                      loan={loan}
+                      btcPrice={btcPrice}
+                      onRepay={(id) => setError('Wallet signing not yet connected — coming soon')}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* All Active Loans — platform table */}
             <ActiveLoansTable
-              loans={filteredActive}
-              totalCount={filteredActive.length}
-              totalCollateralBtc={totalCollateral}
+              loans={allActiveLoans ?? []}
+              totalCount={allActiveLoans?.length ?? 0}
+              totalCollateralBtc={(allActiveLoans ?? []).reduce((sum, l) => sum + l.terms.collateralBtc, 0)}
             />
           </div>
         )}

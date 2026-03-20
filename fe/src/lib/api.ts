@@ -83,6 +83,7 @@ export const loans = {
     const query = new URLSearchParams(params as Record<string, string>).toString();
     return request<import('./types').Loan[]>(`/loans${query ? `?${query}` : ''}`);
   },
+  active: () => request<import('./types').Loan[]>('/loans/active'),
   get: (id: string) => request<import('./types').Loan>(`/loans/${id}`),
   repaymentQuote: (id: string) =>
     request<import('./types').RepaymentQuote>(`/loans/${id}/repayment-quote`),
