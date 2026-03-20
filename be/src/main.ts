@@ -9,6 +9,18 @@ import { IAppConfig } from './commons/types';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // CORS — allow FE origins
+  app.enableCors({
+    origin: [
+      'https://bound-lending.vercel.app',
+      'https://fe-eosin-pi.vercel.app',
+      /\.vercel\.app$/,
+      'http://localhost:3001',
+      'http://localhost:3000',
+    ],
+    credentials: true,
+  });
+
   // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
