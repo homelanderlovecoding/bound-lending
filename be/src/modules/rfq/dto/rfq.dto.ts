@@ -9,12 +9,12 @@ export class CreateRfqDto {
 
   @ApiProperty({ description: 'Loan amount in USD' })
   @IsNumber()
-  @Min(100)
+  @Min(10)
   amountUsd: number;
 
   @ApiProperty({ description: 'Loan term in days' })
   @IsNumber()
-  @Min(30)
+  @Min(1)
   termDays: number;
 
   @ApiPropertyOptional({ description: 'Borrower wallet BTC balance for coverage validation' })
