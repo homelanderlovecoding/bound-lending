@@ -31,7 +31,7 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
   const [success, setSuccess] = useState('');
 
   const handleSubmitOffer = async () => {
-    if (!wallet) { setError('Connect your wallet first'); return; }
+    if (!wallet) { setError('Connect your wallet to submit an offer'); return; }
     if (!selectedRfq || !rateApr) return;
     const rate = parseFloat(rateApr);
     if (isNaN(rate) || rate <= 0 || rate > 100) { setError('Invalid APR — enter a value between 0.1 and 100'); return; }
@@ -51,13 +51,7 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
     }
   };
 
-  if (!wallet) {
-    return (
-      <div className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-s p-8 text-center">
-        <div className="text-[14px] text-[var(--text-muted)]">Connect your wallet to start lending</div>
-      </div>
-    );
-  }
+  // No early return when not connected — show RFQs but gate the submit action
 
   if (isLoading) {
     return (
@@ -171,7 +165,29 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
         {!selectedRfq ? (
           <div className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-s p-6 text-center">
             <Bitcoin className="w-8 h-8 text-[var(--text-muted)] mx-auto mb-3" />
-            <div className="text-[13px] text-[var(--text-muted)]">Select an RFQ to submit your offer</div>
+            {!wallet ? (
+              <div className="text-[13px] text-[var(--text-muted)]">
+                Connect your wallet to submit offers
+              </div>
+            ) : (
+              <div className="text-[13px] text-[var(--text-muted)]">Select an RFQ to submit your offer</div>
+            )}
+          </div>
+        ) : !wallet ? (
+          // RFQ selected but not connected — prompt to connect
+          <div className="bg-[var(--bg-secondary)] border border-[var(--gold-dark)] rounded-s p-5 text-center">
+            <div className="text-[14px] font-semibold text-[var(--text-primary)] mb-2">
+              #{selectedRfq._id.slice(-4).toUpperCase()} — {formatNumber(selectedRfq.amountUsd)} bUSD · {selectedRfq.termDays}d
+            </div>
+            <div className="text-[13px] text-[var(--text-muted)] mb-4">
+              Connect your wallet to submit an offer on this RFQ
+            </div>
+            <button
+              onClick={() => setError('Use the "Connect Wallet" button in the top navigation')}
+              className="px-5 py-2.5 rounded-full text-[13px] font-semibold border-0 cursor-pointer bg-[var(--gold-dark)] text-[var(--parchment)] hover:bg-[var(--gold-light)]"
+            >
+              Connect Wallet to Lend
+            </button>
           </div>
         ) : (
           <div className="bg-[var(--bg-secondary)] border border-[var(--gold-dark)] rounded-s p-5">
