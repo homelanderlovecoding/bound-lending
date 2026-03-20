@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, Query, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { GeneralController } from '../../commons/base-module';
+import { Public } from '../../decorators/public.decorator';
 import { LoanService } from './loan.service';
 import { LoanSigningService } from './loan-signing.service';
 import { SignPsbtDto, LoanQueryDto } from './dto/loan.dto';
@@ -16,6 +17,7 @@ export class LoanController extends GeneralController {
     super();
   }
 
+  @Public()
   @Get('active')
   @ApiOperation({ summary: 'All platform-wide active loans (public)' })
   async getActiveLoans() {
@@ -25,8 +27,7 @@ export class LoanController extends GeneralController {
 
   @Get()
   @ApiOperation({ summary: 'List my loans (filter by role, status)' })
-  async getLoans(@Query() query: LoanQueryDto, @Req() req: { user?: { userId: string } }) {
-    if (!req.user?.userId) return this.response({ data: [] });
+  async getLoans(@Query() query: LoanQueryDto, @Req() req: { user: { userId: string } }) {
     const loans = await this.loanService.getLoansByUser(req.user.userId, query.role);
     return this.response({ data: loans });
   }

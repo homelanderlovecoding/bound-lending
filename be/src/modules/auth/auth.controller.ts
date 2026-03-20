@@ -1,6 +1,7 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { GeneralController } from '../../commons/base-module';
+import { Public } from '../../decorators/public.decorator';
 import { AuthService } from './auth.service';
 import { UserService } from '../user/user.service';
 import { ChallengeRequestDto, VerifyRequestDto, RefreshRequestDto } from './dto/auth.dto';
@@ -15,6 +16,7 @@ export class AuthController extends GeneralController {
     super();
   }
 
+  @Public()
   @Post('challenge')
   @ApiOperation({ summary: 'Request a signing challenge' })
   async challenge(@Body() dto: ChallengeRequestDto) {
@@ -22,6 +24,7 @@ export class AuthController extends GeneralController {
     return this.response({ data: result });
   }
 
+  @Public()
   @Post('verify')
   @ApiOperation({ summary: 'Submit signed challenge and get JWT' })
   async verify(@Body() dto: VerifyRequestDto) {
@@ -37,6 +40,7 @@ export class AuthController extends GeneralController {
     return this.response({ data: tokens });
   }
 
+  @Public()
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token' })
   async refresh(@Body() dto: RefreshRequestDto) {

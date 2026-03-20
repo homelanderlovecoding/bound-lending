@@ -14,11 +14,7 @@ export class DashboardController extends GeneralController {
 
   @Get('summary')
   @ApiOperation({ summary: 'Dashboard summary (active loans, totals)' })
-  async getSummary(@Req() req: { user?: { userId: string } }) {
-    if (!req.user?.userId) {
-      return this.response({ data: { activeLoanCount: 0, totalBorrowed: 0, totalLent: 0, atRiskLoans: 0 } });
-    }
-
+  async getSummary(@Req() req: { user: { userId: string } }) {
     const borrowerLoans = await this.loanService.getLoansByUser(req.user.userId, 'borrower');
     const lenderLoans = await this.loanService.getLoansByUser(req.user.userId, 'lender');
 
@@ -43,8 +39,7 @@ export class DashboardController extends GeneralController {
 
   @Get('loans')
   @ApiOperation({ summary: 'Paginated loan list for dashboard' })
-  async getLoans(@Req() req: { user?: { userId: string } }) {
-    if (!req.user?.userId) return this.response({ data: [] });
+  async getLoans(@Req() req: { user: { userId: string } }) {
     const loans = await this.loanService.getLoansByUser(req.user.userId);
     return this.response({ data: loans });
   }

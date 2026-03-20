@@ -2,6 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { GeneralController } from '../../commons/base-module';
+import { Public } from '../../decorators/public.decorator';
 import { ENV_REGISTER } from '../../commons/constants';
 import { ILendingConfig } from '../../commons/types';
 import { PriceFeedService } from './price-feed.service';
@@ -16,6 +17,7 @@ export class PriceFeedController extends GeneralController {
     super();
   }
 
+  @Public()
   @Get('price/btc')
   @ApiOperation({ summary: 'Get current BTC price' })
   async getBtcPrice() {
@@ -23,6 +25,7 @@ export class PriceFeedController extends GeneralController {
     return this.response({ data: { price, currency: 'USD' } });
   }
 
+  @Public()
   @Get('config/lending')
   @ApiOperation({ summary: 'Get lending configuration parameters' })
   getLendingConfig() {

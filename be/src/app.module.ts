@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -64,6 +66,14 @@ import { UnisatModule } from './modules/unisat/unisat.module';
 
     // Background Jobs
     QueueModule,
+  ],
+  providers: [
+    // Global JWT guard — all routes protected by default
+    // Use @Public() decorator to opt out
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
   ],
 })
 export class AppModule {}
