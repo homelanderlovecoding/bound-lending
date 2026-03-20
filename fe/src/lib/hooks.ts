@@ -31,6 +31,14 @@ export function useOpenRfqs() {
   );
 }
 
+export function useMyRfqs(address?: string) {
+  return useSWR<Rfq[]>(
+    address ? `my-rfqs-${address}` : null,
+    () => rfq.my(),
+    { refreshInterval: 5_000 },
+  );
+}
+
 export function useRfq(id: string | null) {
   return useSWR<Rfq>(
     id ? `rfq-${id}` : null,

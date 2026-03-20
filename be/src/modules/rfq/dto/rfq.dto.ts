@@ -1,5 +1,5 @@
-import { IsNumber, IsString, IsNotEmpty, Min } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsNumber, IsString, IsNotEmpty, Min, IsOptional } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateRfqDto {
   @ApiProperty({ description: 'BTC collateral amount' })
@@ -16,6 +16,12 @@ export class CreateRfqDto {
   @IsNumber()
   @Min(30)
   termDays: number;
+
+  @ApiPropertyOptional({ description: 'Borrower wallet BTC balance for coverage validation' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  walletBalanceBtc?: number;
 }
 
 export class SubmitOfferDto {

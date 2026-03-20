@@ -54,7 +54,8 @@ export const config = {
 // ===== RFQ =====
 export const rfq = {
   list: () => request<import('./types').Rfq[]>('/rfqs'),
-  create: (data: { collateralBtc: number; amountUsd: number; termDays: number }) =>
+  my: () => request<import('./types').Rfq[]>('/rfqs/my'),
+  create: (data: { collateralBtc: number; amountUsd: number; termDays: number; walletBalanceBtc?: number }) =>
     request<import('./types').Rfq>('/rfqs', {
       method: 'POST',
       body: JSON.stringify(data),

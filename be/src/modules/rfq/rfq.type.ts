@@ -6,6 +6,7 @@ export interface IRfqCreateParams {
   amountUsd: number;
   termDays: number;
   btcPrice: number;
+  walletBalanceBtc?: number; // borrower's current BTC balance for coverage check
 }
 
 export interface IRfqOfferParams {

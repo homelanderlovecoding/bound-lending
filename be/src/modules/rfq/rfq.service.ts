@@ -26,10 +26,32 @@ export class RfqService extends BaseService<RfqEntity> {
   }
 
   /**
-   * Create a new RFQ (borrower requests quotes).
+   * Get borrower's own RFQs (active ones).
+   */
+  async getMyRfqs(borrowerId: string): Promise<RfqEntity[]> {
+    return this.find({
+      borrower: new Types.ObjectId(borrowerId),
+      status: { $in: [ERfqStatus.OPEN, ERfqStatus.OFFERS_RECEIVED, ERfqStatus.SELECTED] },
+    });
+  }
+
+  /**
+   * Create a new RFQ with collateral coverage validation.
+   * If walletBalanceBtc provided:
+   *   - sum existing open RFQ collateral
+   *   - if sum + new > balance → auto-cancel newest RFQs (oldest first) until it fits
+   *   - if still can't fit → throw
    */
   async createRfq(params: IRfqCreateParams): Promise<RfqEntity> {
     this.validateLtv(params.amountUsd, params.collateralBtc, params.btcPrice);
+
+    if (params.walletBalanceBtc !== undefined) {
+      await this.enforceCollateralCoverage(
+        params.borrowerId,
+        params.collateralBtc,
+        params.walletBalanceBtc,
+      );
+    }
 
     const impliedLtv = this.calculateLtv(params.amountUsd, params.collateralBtc, params.btcPrice);
 
@@ -46,6 +68,45 @@ export class RfqService extends BaseService<RfqEntity> {
 
     this.eventEmitter.emit(EVENT.RFQ_CREATED, { rfqId: rfq._id.toString() });
     return rfq;
+  }
+
+  /**
+   * Check and enforce collateral coverage:
+   * Cancel newest open RFQs if total collateral exceeds wallet balance.
+   */
+  private async enforceCollateralCoverage(
+    borrowerId: string,
+    newCollateralBtc: number,
+    walletBalanceBtc: number,
+  ): Promise<void> {
+    const openRfqs = await this.find({
+      borrower: new Types.ObjectId(borrowerId),
+      status: { $in: [ERfqStatus.OPEN, ERfqStatus.OFFERS_RECEIVED] },
+    });
+
+    // Sort oldest first (cancel newest if needed)
+    openRfqs.sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime());
+
+    const usedBtc = openRfqs.reduce((sum, r) => sum + r.collateralBtc, 0);
+    let available = walletBalanceBtc - usedBtc;
+
+    if (available >= newCollateralBtc) return; // enough room, proceed
+
+    // Auto-cancel newest RFQs (from end) until we have room
+    const toCancel = [...openRfqs].reverse();
+    for (const rfq of toCancel) {
+      await this.findByIdAndUpdate(rfq._id.toString(), {
+        $set: { status: ERfqStatus.CANCELLED },
+      });
+      this.eventEmitter.emit(EVENT.RFQ_CANCELLED, { rfqId: rfq._id.toString(), reason: 'insufficient_balance' });
+      available += rfq.collateralBtc;
+      if (available >= newCollateralBtc) return;
+    }
+
+    // Still not enough
+    throw new BadRequestException(
+      `Insufficient BTC balance. Need ${newCollateralBtc} BTC but only ${available.toFixed(6)} available after cancellations.`
+    );
   }
 
   /**

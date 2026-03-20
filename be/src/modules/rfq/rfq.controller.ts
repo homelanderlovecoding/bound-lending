@@ -30,6 +30,7 @@ export class RfqController extends GeneralController {
       amountUsd: dto.amountUsd,
       termDays: dto.termDays,
       btcPrice,
+      walletBalanceBtc: dto.walletBalanceBtc,
     });
     return this.response({ data: rfq });
   }
@@ -38,6 +39,14 @@ export class RfqController extends GeneralController {
   @ApiOperation({ summary: 'List all open RFQs (lender discovery feed)' })
   async getOpenRfqs() {
     const rfqs = await this.rfqService.getOpenRfqs();
+    return this.response({ data: rfqs });
+  }
+
+  @Get('my')
+  @ApiOperation({ summary: 'Get my RFQs (borrower)' })
+  async getMyRfqs(@Req() req: { user?: { userId: string } }) {
+    if (!req.user?.userId) return this.response({ data: [] });
+    const rfqs = await this.rfqService.getMyRfqs(req.user.userId);
     return this.response({ data: rfqs });
   }
 
