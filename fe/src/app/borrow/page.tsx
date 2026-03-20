@@ -15,6 +15,7 @@ import { rfq as rfqApi, loans as loansApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { signPsbt } from '@/lib/psbt';
 import MyLoanCard from '@/components/MyLoanCard';
+import LendPanel from '@/components/LendPanel';
 import type { Loan, LoanOffer } from '@/lib/types';
 
 type Tab = 'new-loan' | 'active-loans';
@@ -27,6 +28,7 @@ interface RfqData {
 
 export default function BorrowPage() {
   const [tab, setTab] = useState<Tab>('new-loan');
+  const [mode, setMode] = useState<'borrow' | 'lend'>('borrow');
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [rfqData, setRfqData] = useState<RfqData | null>(null);
   const [rfqId, setRfqId] = useState<string | null>(null);
@@ -235,6 +237,30 @@ export default function BorrowPage() {
               </span>
             </div>
 
+            {/* Borrow / Lend mode toggle */}
+            <div className="flex bg-[var(--bg-tertiary)] border border-[var(--border)] rounded-full p-1 w-fit mb-6">
+              {(['borrow', 'lend'] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={clsx(
+                    'px-5 py-1.5 rounded-full text-[13px] font-semibold border-0 cursor-pointer transition-colors duration-150 capitalize',
+                    mode === m
+                      ? 'bg-[var(--gold-dark)] text-[var(--parchment)]'
+                      : 'bg-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]',
+                  )}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+
+            {/* Lend mode */}
+            {mode === 'lend' && <LendPanel btcPrice={btcPrice} />}
+
+            {/* Borrow mode */}
+            {mode === 'borrow' && (
+            <div>
             <StepIndicator currentStep={step} />
 
             {/* Step 1: RFQ Input */}
@@ -392,6 +418,8 @@ export default function BorrowPage() {
                   </div>
                 </div>
               </div>
+            )}
+            </div>
             )}
           </div>
         )}

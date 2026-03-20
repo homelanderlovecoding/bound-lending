@@ -34,6 +34,13 @@ export class RfqController extends GeneralController {
     return this.response({ data: rfq });
   }
 
+  @Get()
+  @ApiOperation({ summary: 'List all open RFQs (lender discovery feed)' })
+  async getOpenRfqs() {
+    const rfqs = await this.rfqService.getOpenRfqs();
+    return this.response({ data: rfqs });
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get RFQ details + offers' })
   async getRfq(@Param('id') id: string) {

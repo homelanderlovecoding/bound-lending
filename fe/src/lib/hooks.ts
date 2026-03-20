@@ -23,6 +23,14 @@ export function useLendingConfig() {
 }
 
 // ===== RFQ =====
+export function useOpenRfqs() {
+  return useSWR<Rfq[]>(
+    'open-rfqs',
+    () => rfq.list(),
+    { refreshInterval: 10_000 },
+  );
+}
+
 export function useRfq(id: string | null) {
   return useSWR<Rfq>(
     id ? `rfq-${id}` : null,

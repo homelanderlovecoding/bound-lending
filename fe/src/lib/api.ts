@@ -53,6 +53,7 @@ export const config = {
 
 // ===== RFQ =====
 export const rfq = {
+  list: () => request<import('./types').Rfq[]>('/rfqs'),
   create: (data: { collateralBtc: number; amountUsd: number; termDays: number }) =>
     request<import('./types').Rfq>('/rfqs', {
       method: 'POST',

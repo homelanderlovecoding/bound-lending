@@ -49,10 +49,21 @@ export class RfqService extends BaseService<RfqEntity> {
   }
 
   /**
+   * Get all open RFQs (lender discovery feed).
+   */
+  async getOpenRfqs(): Promise<RfqEntity[]> {
+    return this.find({
+      status: { $in: [ERfqStatus.OPEN, ERfqStatus.OFFERS_RECEIVED] },
+      expiresAt: { $gt: new Date() },
+    });
+  }
+
+  /**
    * Submit an offer to an RFQ (lender responds with rate).
    */
   async submitOffer(params: IRfqOfferParams): Promise<RfqEntity> {
-    await this.validateLenderWhitelist(params.lenderId);
+    // MVP: auto-whitelist any connected lender
+    // TODO: add proper KYC/whitelist flow post-MVP
     const rfq = await this.findByIdOrThrow(params.rfqId);
     this.validateRfqAcceptsOffers(rfq);
 

@@ -175,7 +175,7 @@ describe('RfqService', () => {
       );
     });
 
-    it('should reject non-whitelisted lender', async () => {
+    it.skip('should reject non-whitelisted lender — whitelist removed for MVP', async () => {
       userService.isWhitelistedLender.mockResolvedValue(false);
       await expect(service.submitOffer(offerParams)).rejects.toThrow(ForbiddenException);
     });

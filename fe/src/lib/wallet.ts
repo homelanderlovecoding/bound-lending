@@ -5,7 +5,7 @@ export type WalletType = 'unisat' | 'xverse';
 export interface WalletInfo {
   type: WalletType;
   address: string;
-  publicKey: string;
+  publicKey: string; // 33-byte compressed hex
 }
 
 // ===== UniSat =====
