@@ -32,9 +32,10 @@ export function useRfq(id: string | null) {
 }
 
 // ===== Loans =====
-export function useMyLoans(role?: string) {
+export function useMyLoans(role?: string, address?: string) {
+  // Include address in key so SWR refetches when wallet connects
   return useSWR<Loan[]>(
-    `my-loans-${role ?? 'all'}`,
+    address ? `my-loans-${role ?? 'all'}-${address}` : null,
     () => loans.list(role ? { role } : undefined),
     { refreshInterval: 15_000 },
   );

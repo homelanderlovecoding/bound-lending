@@ -43,7 +43,7 @@ export default function BorrowPage() {
   const { data: priceData, isLoading: priceLoading } = useBtcPrice();
   const { data: lendingConfig, isLoading: configLoading } = useLendingConfig();
   const { data: rfqDetail } = useRfq(rfqId);
-  const { data: myLoans } = useMyLoans('borrower');
+  const { data: myLoans } = useMyLoans('borrower', wallet?.address);
   const { data: allActiveLoans } = useAllActiveLoans();
 
   const btcPrice = priceData?.price ?? 0;
@@ -400,9 +400,17 @@ export default function BorrowPage() {
         {tab === 'active-loans' && (
           <div className="max-w-[1120px] mx-auto px-6 py-6">
             {/* My Loans — personal cards */}
-            {filteredActive.length > 0 && (
-              <div className="mb-8">
-                <div className="text-sm font-semibold text-[var(--text-primary)] mb-4">My Loans</div>
+            <div className="mb-8">
+              <div className="text-sm font-semibold text-[var(--text-primary)] mb-4">My Loans</div>
+              {!wallet ? (
+                <div className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-s p-6 text-center text-[13px] text-[var(--text-muted)]">
+                  Connect your wallet to see your loans
+                </div>
+              ) : filteredActive.length === 0 ? (
+                <div className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-s p-6 text-center text-[13px] text-[var(--text-muted)]">
+                  No active loans — create a new loan above
+                </div>
+              ) : (
                 <div className="flex gap-4 overflow-x-auto">
                   {filteredActive.map((loan) => (
                     <MyLoanCard
@@ -413,8 +421,8 @@ export default function BorrowPage() {
                     />
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* All Active Loans — platform table */}
             <ActiveLoansTable
