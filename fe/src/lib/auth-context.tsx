@@ -57,8 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // 3. Sign the challenge message
       const signature = await signMessage(type, challenge.message, info.address);
 
-      // 4. Verify with BE → get JWT
-      const tokens = await authApi.verify(info.address, signature, challenge.nonce);
+      // 4. Verify with BE → get JWT (pass pubkey so it's stored on user record)
+      const tokens = await authApi.verify(info.address, signature, challenge.nonce, info.publicKey);
 
       // 5. Store tokens + wallet info
       localStorage.setItem('access_token', tokens.accessToken);

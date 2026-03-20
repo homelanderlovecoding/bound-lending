@@ -1,5 +1,5 @@
-import { IsString, IsNotEmpty } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ChallengeRequestDto {
   @ApiProperty({ description: 'Bitcoin address (Trading Wallet)' })
@@ -14,7 +14,7 @@ export class VerifyRequestDto {
   @IsNotEmpty()
   address: string;
 
-  @ApiProperty({ description: 'Signed message (hex)' })
+  @ApiProperty({ description: 'Signed message (base64)' })
   @IsString()
   @IsNotEmpty()
   signature: string;
@@ -23,6 +23,11 @@ export class VerifyRequestDto {
   @IsString()
   @IsNotEmpty()
   nonce: string;
+
+  @ApiPropertyOptional({ description: 'Compressed public key hex (33 bytes)' })
+  @IsOptional()
+  @IsString()
+  publicKey?: string;
 }
 
 export class RefreshRequestDto {

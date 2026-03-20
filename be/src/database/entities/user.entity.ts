@@ -12,8 +12,8 @@ export class UserEntity extends BaseEntity {
   @Prop({ type: String, required: true, unique: true, index: true })
   address: string;
 
-  /** Compressed public key (hex) */
-  @Prop({ type: String, required: true })
+  /** Compressed public key (hex) — set on first wallet connect */
+  @Prop({ type: String, required: false, default: '' })
   pubkey: string;
 
   /** User roles */

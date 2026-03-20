@@ -28,10 +28,10 @@ export const auth = {
       method: 'POST',
       body: JSON.stringify({ address }),
     }),
-  verify: (address: string, signature: string, nonce: string) =>
+  verify: (address: string, signature: string, nonce: string, publicKey?: string) =>
     request<{ accessToken: string; refreshToken: string }>('/auth/verify', {
       method: 'POST',
-      body: JSON.stringify({ address, signature, nonce }),
+      body: JSON.stringify({ address, signature, nonce, ...(publicKey ? { publicKey } : {}) }),
     }),
   refresh: (refreshToken: string) =>
     request<{ accessToken: string; refreshToken: string }>('/auth/refresh', {

@@ -25,8 +25,8 @@ export class AuthController extends GeneralController {
   @Post('verify')
   @ApiOperation({ summary: 'Submit signed challenge and get JWT' })
   async verify(@Body() dto: VerifyRequestDto) {
-    // Find or create user
-    const user = await this.userService.findOrCreateByAddress(dto.address);
+    // Find or create user — store pubkey if provided (needed for PSBT construction)
+    const user = await this.userService.findOrCreateByAddress(dto.address, dto.publicKey);
 
     const tokens = await this.authService.verifyAndIssueTokens(
       { address: dto.address, signature: dto.signature, nonce: dto.nonce },

@@ -17,13 +17,19 @@ export class UserService extends BaseService<UserEntity> {
   /**
    * Find user by address, or create a new borrower account.
    */
-  async findOrCreateByAddress(address: string): Promise<UserEntity> {
+  async findOrCreateByAddress(address: string, pubkey?: string): Promise<UserEntity> {
     const existing = await this.findOne({ address });
-    if (existing) return existing;
+    if (existing) {
+      // Update pubkey if provided and not yet set
+      if (pubkey && !existing.pubkey) {
+        return (await this.findByIdAndUpdate(existing._id.toString(), { $set: { pubkey } }))!;
+      }
+      return existing;
+    }
 
     return this.create({
       address,
-      pubkey: '', // Will be set when user provides pubkey
+      pubkey: pubkey ?? '',
       roles: [EUserRole.BORROWER],
       isWhitelistedLender: false,
     } as Partial<UserEntity>);
