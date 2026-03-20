@@ -161,7 +161,7 @@ describe('LoanService', () => {
     it('should calculate origination fee and total debt correctly', async () => {
       await service.createFromRfq(createParams);
       const callArg = (service.create as jest.Mock).mock.calls[0][0];
-      const expectedFee = createParams.amountUsd * (createParams.originationFeePct / 100);
+      const expectedFee = createParams.amountUsd * ((createParams.originationFeePct ?? 0.2) / 100);
       const expectedTotalDebt = createParams.amountUsd + expectedFee;
       expect(callArg.terms.originationFee).toBeCloseTo(expectedFee, 2);
       expect(callArg.terms.totalDebt).toBeCloseTo(expectedTotalDebt, 2);

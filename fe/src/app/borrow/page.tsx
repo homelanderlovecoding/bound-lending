@@ -13,6 +13,7 @@ import { calculateLtv, formatNumber, ltvColor, estLiquidationPrice } from '@/lib
 import { useBtcPrice, useLendingConfig, useRfq, useMyLoans, useAllActiveLoans } from '@/lib/hooks';
 import { rfq as rfqApi, loans as loansApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { signPsbt } from '@/lib/psbt';
 import MyLoanCard from '@/components/MyLoanCard';
 import type { Loan, LoanOffer } from '@/lib/types';
 
@@ -36,7 +37,7 @@ export default function BorrowPage() {
   const [error, setError] = useState('');
 
   // Wallet context
-  const { btcBalance } = useAuth();
+  const { wallet, btcBalance } = useAuth();
 
   // Live data from BE
   const { data: priceData, isLoading: priceLoading } = useBtcPrice();
@@ -83,7 +84,9 @@ export default function BorrowPage() {
     setError('');
     setLoading(true);
     try {
-      await rfqApi.accept(rfqId, offers[selectedOffer]._id);
+      const res = await rfqApi.accept(rfqId, offers[selectedOffer]._id) as any;
+      // Capture loanId from response
+      if (res?.loanId) setLoanId(res.loanId);
       setStep(3);
       setSigningState({});
     } catch (err: any) {
@@ -93,11 +96,55 @@ export default function BorrowPage() {
     }
   };
 
-  // ===== Step 3: Sign PSBT =====
+  // ===== Step 3: Sign origination PSBT =====
   const handleSign = async () => {
-    // TODO: Wire to actual wallet PSBT signing
-    // For now, show that the flow works with a placeholder
-    setError('Wallet signing not yet connected — coming soon');
+    if (!wallet) {
+      setError('Connect your wallet first');
+      return;
+    }
+    setError('');
+    setLoading(true);
+    try {
+      // 1. Get the unsigned origination PSBT from BE
+      const psbtRes = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/loans/${loanId}/psbt/origination`,
+        { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } },
+      );
+      const psbtJson = await psbtRes.json();
+      const psbtHex: string = psbtJson?.data?.psbtHex;
+      if (!psbtHex) throw new Error('No PSBT returned from server');
+
+      // 2. Sign with wallet
+      setSigningState((s) => ({ ...s, borrower: true }));
+      const signedPsbtHex = await signPsbt(wallet.type, psbtHex);
+
+      // 3. Submit signed PSBT to BE
+      const submitRes = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/loans/${loanId}/psbt/origination/sign`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${localStorage.getItem('access_token')}`,
+          },
+          body: JSON.stringify({ signedPsbtHex }),
+        },
+      );
+      const submitJson = await submitRes.json();
+      if (!submitRes.ok) throw new Error(submitJson?.message || 'Failed to submit signature');
+
+      // 4. Check if complete (all 3 signed + broadcast)
+      if (submitJson?.data?.complete && submitJson?.data?.txid) {
+        setSigningState({ borrower: true, lender: true, bound: true });
+      } else {
+        setSigningState((s) => ({ ...s, borrower: true }));
+      }
+    } catch (err: any) {
+      setError(err.message || 'Signing failed');
+      setSigningState({});
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Cancel RFQ

@@ -138,10 +138,13 @@ export class LoanService extends BaseService<LoanEntity> {
   }
 
   private buildEscrow(params: ICreateLoanParams) {
+    const btcConfig = this.configService.get<any>(ENV_REGISTER.BITCOIN) ?? {};
+    const boundPubkey = params.boundPubkey ?? btcConfig.boundPubkey;
+
     const multisig = this.multisigService.createMultisigAddress({
       borrowerPubkey: params.borrowerPubkey,
       lenderPubkey: params.lenderPubkey,
-      boundPubkey: params.boundPubkey,
+      boundPubkey,
     });
 
     return {
@@ -149,14 +152,15 @@ export class LoanService extends BaseService<LoanEntity> {
       redeemScript: multisig.redeemScriptHex,
       borrowerPubkey: params.borrowerPubkey,
       lenderPubkey: params.lenderPubkey,
-      boundPubkey: params.boundPubkey,
+      boundPubkey,
       fundingTxid: '',
       fundingVout: 0,
     };
   }
 
   private buildTerms(params: ICreateLoanParams) {
-    const originationFee = params.amountUsd * (params.originationFeePct / 100);
+    const feePct = params.originationFeePct ?? this.lendingConfig.originationFeePct;
+    const originationFee = params.amountUsd * (feePct / 100);
     const totalDebt = params.amountUsd + originationFee;
 
     return {

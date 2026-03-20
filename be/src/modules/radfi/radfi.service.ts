@@ -76,8 +76,9 @@ export class RadFiService {
    * Note: RadFi /api/utxos returns UTXOs for the authenticated Trading Wallet,
    * not by address — this is a platform-level endpoint.
    */
-  async fetchUtxos(): Promise<IRadFiUtxo[]> {
-    const url = `${this.config.baseUrl}/api/utxos`;
+  async fetchUtxos(address?: string): Promise<IRadFiUtxo[]> {
+    const query = address ? `?address=${address}` : '';
+    const url = `${this.config.baseUrl}/api/utxos${query}`;
 
     try {
       const res = await fetch(url);

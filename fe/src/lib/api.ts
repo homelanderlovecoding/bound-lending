@@ -69,7 +69,7 @@ export const rfq = {
       method: 'DELETE',
     }),
   accept: (rfqId: string, offerId: string) =>
-    request<import('./types').Rfq>(`/rfqs/${rfqId}/accept`, {
+    request<{ rfq: import('./types').Rfq; loan?: import('./types').Loan; loanId?: string }>(`/rfqs/${rfqId}/accept`, {
       method: 'POST',
       body: JSON.stringify({ offerId }),
     }),

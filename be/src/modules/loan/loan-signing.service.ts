@@ -362,27 +362,42 @@ export class LoanSigningService {
   }
 
   private async getBorrowerBtcUtxos(loan: LoanEntity): Promise<IUtxoInput[]> {
-    const utxos = await this.radfiService.fetchUtxos();
+    const borrowerAddress = await this.resolveBorrowerAddress(loan);
+    const utxos = await this.radfiService.fetchUtxos(borrowerAddress);
     return utxos
-      .filter((u) => u.address === loan.escrow.borrowerPubkey && u.isAvailable && !u.isSpent)
+      .filter((u) => u.isAvailable && !u.isSpent)
       .map((u) => ({ txid: u.txid, vout: u.vout, value: u.satoshi }));
   }
 
   private async getLenderBusdUtxos(loan: LoanEntity): Promise<IUtxoInput[]> {
-    return []; // Runes UTXOs resolved by lender wallet SDK — stub for now
+    // Lender's Rune UTXOs are provided by the lender's wallet on the FE side
+    // They are embedded in the lender-signed PSBT inputs — not fetched server-side
+    return [];
+  }
+
+  /**
+   * Derive P2TR address from a compressed pubkey (33-byte hex).
+   * Uses the pubkey as the internal key (single-key P2TR).
+   */
+  private pubkeyToP2TRAddress(pubkeyHex: string): string {
+    const pubkeyBuf = Buffer.from(pubkeyHex, 'hex');
+    const xOnly = pubkeyBuf.slice(1); // strip 02/03 prefix
+    const p2tr = bitcoin.payments.p2tr({ internalPubkey: xOnly, network: this.network });
+    return p2tr.address!;
   }
 
   private async resolveBorrowerAddress(loan: LoanEntity): Promise<string> {
-    return loan.escrow.borrowerPubkey; // TODO: resolve actual P2TR/P2WPKH address
+    // borrowerPubkey is a compressed 33-byte hex pubkey → derive P2TR address
+    return this.pubkeyToP2TRAddress(loan.escrow.borrowerPubkey);
   }
 
   private async resolveLenderBtcAddress(loan: LoanEntity): Promise<string> {
-    return loan.escrow.lenderPubkey; // TODO: resolve actual address
+    return this.pubkeyToP2TRAddress(loan.escrow.lenderPubkey);
   }
 
   private async resolveBoundAddress(): Promise<string> {
     const btcConfig = this.configService.get<IBitcoinConfig>(ENV_REGISTER.BITCOIN)!;
-    return btcConfig.boundPubkey; // TODO: derive P2TR address from Bound pubkey
+    return this.pubkeyToP2TRAddress(btcConfig.boundPubkey);
   }
 
   private validateState(loan: LoanEntity, expected: ELoanState): void {
@@ -394,7 +409,8 @@ export class LoanSigningService {
   private resolveNetwork(network: string): bitcoin.Network {
     switch (network) {
       case 'mainnet': return bitcoin.networks.bitcoin;
-      case 'testnet': return bitcoin.networks.testnet;
+      case 'signet':
+      case 'testnet': return bitcoin.networks.testnet; // signet uses testnet WIF/address prefix
       default: return bitcoin.networks.regtest;
     }
   }

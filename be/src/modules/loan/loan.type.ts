@@ -17,10 +17,11 @@ export interface ICreateLoanParams {
   lenderId: string;
   borrowerPubkey: string;
   lenderPubkey: string;
-  boundPubkey: string;
+  boundPubkey?: string;       // optional — resolved from config if not provided
   amountUsd: number;
   collateralBtc: number;
   rateApr: number;
   termDays: number;
-  originationFeePct: number;
+  originationFeePct?: number; // optional — resolved from config if not provided
+  btcPrice?: number;          // optional — used for LTV calculation
 }
