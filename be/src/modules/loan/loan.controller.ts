@@ -18,7 +18,8 @@ export class LoanController extends GeneralController {
 
   @Get()
   @ApiOperation({ summary: 'List my loans (filter by role, status)' })
-  async getLoans(@Query() query: LoanQueryDto, @Req() req: { user: { userId: string } }) {
+  async getLoans(@Query() query: LoanQueryDto, @Req() req: { user?: { userId: string } }) {
+    if (!req.user?.userId) return this.response({ data: [] });
     const loans = await this.loanService.getLoansByUser(req.user.userId, query.role);
     return this.response({ data: loans });
   }

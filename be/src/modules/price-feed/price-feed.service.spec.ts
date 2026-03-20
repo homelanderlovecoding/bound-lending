@@ -75,11 +75,13 @@ describe('PriceFeedService', () => {
       expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
 
-    it('should return 0 (fallback) if fewer than 3 feeds respond', async () => {
+    it('should return 0 (fallback) if fewer than 2 feeds respond', async () => {
       jest.spyOn(service as any, 'fetchAllFeeds').mockResolvedValue([
         makeFeed(91000, 'coingecko'),
         { price: 0, source: 'binance', timestamp: new Date(), isOk: false },
         { price: 0, source: 'coinmarketcap', timestamp: new Date(), isOk: false },
+        { price: 0, source: 'hyperliquid', timestamp: new Date(), isOk: false },
+        { price: 0, source: 'kraken', timestamp: new Date(), isOk: false },
       ]);
 
       const price = await service.getBtcPrice();
