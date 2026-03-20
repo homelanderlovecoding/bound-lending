@@ -1,10 +1,10 @@
 {
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://subaru-implemented-accountability-courage.trycloudflare.com"
+    "NEXT_PUBLIC_API_URL": "https://doc-stored-ensure-simply.trycloudflare.com"
   },
   "build": {
     "env": {
-      "NEXT_PUBLIC_API_URL": "https://subaru-implemented-accountability-courage.trycloudflare.com"
+      "NEXT_PUBLIC_API_URL": "https://doc-stored-ensure-simply.trycloudflare.com"
     }
   }
 }

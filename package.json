@@ -1,0 +1,19 @@
+{
+  "name": "bound-lending",
+  "version": "1.0.0",
+  "description": "BTC-collateralized, fixed-term, fixed-rate lending platform on Bitcoin Signet. Borrowers lock BTC in a 2-of-3 taproot multisig escrow and receive bUSD (Runes). Repay before deadline → get BTC back. Don't → lender claims BTC.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github-bound:homelanderlovecoding/bound-lending.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}
