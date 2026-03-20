@@ -80,6 +80,24 @@ async function signMessageXverse(message: string, address: string): Promise<stri
   return response?.result?.signature ?? response?.result;
 }
 
+// ===== Balance =====
+async function getBtcBalanceUnisat(): Promise<number> {
+  const unisat = getUnisat();
+  if (!unisat) return 0;
+  const balance = await unisat.getBalance();
+  // Returns { confirmed: number, unconfirmed: number, total: number } in satoshis
+  return (balance.confirmed ?? balance.total ?? 0) / 1e8;
+}
+
+async function getBtcBalanceXverse(): Promise<number> {
+  const provider = getXverse();
+  if (!provider) return 0;
+  const response = await provider.request('getBalance', null);
+  // Returns balance in satoshis
+  const satoshi = response?.result?.total ?? response?.result?.confirmed ?? 0;
+  return satoshi / 1e8;
+}
+
 // ===== Unified API =====
 export async function connectWallet(type: WalletType): Promise<WalletInfo> {
   if (type === 'unisat') return connectUnisat();
@@ -91,6 +109,12 @@ export async function signMessage(type: WalletType, message: string, address?: s
   if (type === 'unisat') return signMessageUnisat(message);
   if (type === 'xverse') return signMessageXverse(message, address!);
   throw new Error(`Unknown wallet type: ${type}`);
+}
+
+export async function getBtcBalance(type: WalletType): Promise<number> {
+  if (type === 'unisat') return getBtcBalanceUnisat();
+  if (type === 'xverse') return getBtcBalanceXverse();
+  return 0;
 }
 
 export function isWalletInstalled(type: WalletType): boolean {

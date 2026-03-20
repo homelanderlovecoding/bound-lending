@@ -55,6 +55,9 @@ describe('AuthService', () => {
       const address = 'bc1qverifytest';
       const { nonce } = service.generateChallenge(address);
 
+      // Mock signature verification — real sig verification is tested via integration
+      jest.spyOn(service as any, 'verifySignature').mockReturnValue(undefined);
+
       const result = await service.verifyAndIssueTokens(
         { address, signature: 'fake-sig', nonce },
         'user-id',

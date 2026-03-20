@@ -1,10 +1,15 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'crypto';
+import * as bitcoin from 'bitcoinjs-lib';
+import * as bitcoinMessage from 'bitcoinjs-message';
+import * as ecc from 'tiny-secp256k1';
 import { ENV_REGISTER, RESPONSE_CODE } from '../../commons/constants';
 import { IAppConfig } from '../../commons/types';
 import { IAuthChallenge, IAuthTokens, IAuthVerifyParams, IJwtPayload } from './auth.type';
+
+bitcoin.initEccLib(ecc);
 
 /** In-memory challenge store (swap for Redis in production) */
 const challenges = new Map<string, { message: string; expiresAt: Date }>();
@@ -12,6 +17,7 @@ const challenges = new Map<string, { message: string; expiresAt: Date }>();
 @Injectable()
 export class AuthService {
   private readonly appConfig: IAppConfig;
+  private readonly logger = new Logger(AuthService.name);
 
   constructor(
     private readonly configService: ConfigService,
@@ -47,8 +53,8 @@ export class AuthService {
     this.validateChallengeExists(challenge);
     this.validateChallengeNotExpired(challenge!);
 
-    // TODO: BIP-322 signature verification against address
-    // For MVP, we validate the challenge exists and is not expired
+    // Verify signature against address
+    this.verifySignature(params.address, challenge!.message, params.signature);
 
     challenges.delete(params.nonce);
 
@@ -75,6 +81,29 @@ export class AuthService {
       return this.jwtService.verify<IJwtPayload>(token);
     } catch {
       throw new UnauthorizedException(RESPONSE_CODE.auth.invalidToken);
+    }
+  }
+
+  /**
+   * Verify a Bitcoin message signature against an address.
+   * Supports: P2PKH (1...), P2WPKH (bc1q/tb1q), P2TR (bc1p/tb1p)
+   * UniSat and Xverse both sign with legacy message format (base64).
+   */
+  private verifySignature(address: string, message: string, signature: string): void {
+    try {
+      const network = address.startsWith('tb1') || address.startsWith('m') || address.startsWith('n') || address.startsWith('2')
+        ? bitcoin.networks.testnet  // signet uses testnet prefix
+        : bitcoin.networks.bitcoin;
+
+      // Try standard verification (works for P2PKH, P2WPKH, P2SH-P2WPKH)
+      const valid = bitcoinMessage.verify(message, address, signature, undefined, true);
+      if (!valid) {
+        throw new BadRequestException(RESPONSE_CODE.auth.invalidSignature ?? 'Invalid signature');
+      }
+    } catch (err: any) {
+      // If bitcoinjs-message throws (e.g. P2TR schnorr), log and reject
+      this.logger.warn(`Signature verification failed for ${address}: ${err.message}`);
+      throw new BadRequestException(err.message?.includes('Invalid') ? 'Invalid signature' : 'Signature verification failed');
     }
   }
 

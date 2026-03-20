@@ -2,21 +2,24 @@ import { Controller, Post, Get, Delete, Body, Param, Req } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { GeneralController } from '../../commons/base-module';
 import { RfqService } from './rfq.service';
+import { PriceFeedService } from '../price-feed/price-feed.service';
 import { CreateRfqDto, SubmitOfferDto, AcceptOfferDto } from './dto/rfq.dto';
 
 @ApiTags('RFQ')
 @ApiBearerAuth()
 @Controller('rfqs')
 export class RfqController extends GeneralController {
-  constructor(private readonly rfqService: RfqService) {
+  constructor(
+    private readonly rfqService: RfqService,
+    private readonly priceFeedService: PriceFeedService,
+  ) {
     super();
   }
 
   @Post()
   @ApiOperation({ summary: 'Create a new RFQ (borrower)' })
   async createRfq(@Body() dto: CreateRfqDto, @Req() req: { user: { userId: string } }) {
-    // TODO: Get real BTC price from price feed service
-    const btcPrice = 91183.76;
+    const btcPrice = await this.priceFeedService.getBtcPrice();
     const rfq = await this.rfqService.createRfq({
       borrowerId: req.user.userId,
       collateralBtc: dto.collateralBtc,

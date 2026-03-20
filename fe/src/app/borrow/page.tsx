@@ -12,6 +12,7 @@ import ActiveLoansTable from '@/components/ActiveLoansTable';
 import { calculateLtv, formatNumber, ltvColor, estLiquidationPrice } from '@/lib/utils';
 import { useBtcPrice, useLendingConfig, useRfq, useMyLoans, useAllActiveLoans } from '@/lib/hooks';
 import { rfq as rfqApi, loans as loansApi } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import MyLoanCard from '@/components/MyLoanCard';
 import type { Loan, LoanOffer } from '@/lib/types';
 
@@ -34,6 +35,9 @@ export default function BorrowPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Wallet context
+  const { btcBalance } = useAuth();
+
   // Live data from BE
   const { data: priceData, isLoading: priceLoading } = useBtcPrice();
   const { data: lendingConfig, isLoading: configLoading } = useLendingConfig();
@@ -47,8 +51,7 @@ export default function BorrowPage() {
   const minLoanAmount = lendingConfig?.minLoanAmountUsd ?? 100;
   const minTermDays = lendingConfig?.minLoanTermDays ?? 30;
 
-  // TODO: Get from wallet — for now placeholder
-  const btcBalance = 0;
+  // btcBalance comes from auth context (fetched after wallet connect)
 
   // Real offers from RFQ polling
   const offers = rfqDetail?.offers?.filter((o) => o.status === 'pending') ?? [];

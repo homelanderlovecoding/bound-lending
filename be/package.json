@@ -29,6 +29,7 @@
     "@nestjs/websockets": "^10.4.0",
     "@noble/hashes": "^1.6.0",
     "bitcoinjs-lib": "^6.1.6",
+    "bitcoinjs-message": "^2.2.0",
     "bullmq": "^5.25.0",
     "cbor-x": "^1.6.0",
     "class-transformer": "^0.5.1",

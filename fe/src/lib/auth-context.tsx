@@ -1,27 +1,32 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
-import { connectWallet, signMessage, type WalletType, type WalletInfo } from './wallet';
+import { connectWallet, signMessage, getBtcBalance, type WalletType, type WalletInfo } from './wallet';
 import { auth as authApi } from './api';
 
 interface AuthState {
   wallet: WalletInfo | null;
+  btcBalance: number;
   isConnecting: boolean;
   error: string;
   connect: (type: WalletType) => Promise<void>;
   disconnect: () => void;
+  refreshBalance: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState>({
   wallet: null,
+  btcBalance: 0,
   isConnecting: false,
   error: '',
   connect: async () => {},
   disconnect: () => {},
+  refreshBalance: async () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
+  const [btcBalance, setBtcBalance] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState('');
 
@@ -61,6 +66,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('wallet_info', JSON.stringify(info));
 
       setWallet(info);
+
+      // 6. Fetch BTC balance
+      const balance = await getBtcBalance(type);
+      setBtcBalance(balance);
     } catch (err: any) {
       setError(err.message || 'Failed to connect wallet');
       throw err;
@@ -69,16 +78,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refreshBalance = useCallback(async () => {
+    if (!wallet) return;
+    const balance = await getBtcBalance(wallet.type);
+    setBtcBalance(balance);
+  }, [wallet]);
+
   const disconnect = useCallback(() => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('wallet_info');
     setWallet(null);
+    setBtcBalance(0);
     setError('');
   }, []);
 
   return (
-    <AuthContext.Provider value={{ wallet, isConnecting, error, connect, disconnect }}>
+    <AuthContext.Provider value={{ wallet, btcBalance, isConnecting, error, connect, disconnect, refreshBalance }}>
       {children}
     </AuthContext.Provider>
   );

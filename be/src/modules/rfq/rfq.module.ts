@@ -5,11 +5,13 @@ import { RfqSchema } from '../../database/entities';
 import { RfqService } from './rfq.service';
 import { RfqController } from './rfq.controller';
 import { UserModule } from '../user/user.module';
+import { PriceFeedModule } from '../price-feed/price-feed.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: TABLE_NAME.RFQ, schema: RfqSchema }]),
     UserModule,
+    PriceFeedModule,
   ],
   controllers: [RfqController],
   providers: [RfqService],
