@@ -71,9 +71,10 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
           });
         }
       } catch (psbtErr: any) {
-        // Gracefully degrade — PSBT flow failed, submit without it
-        console.warn('PSBT prepare/sign failed, submitting without:', psbtErr?.message);
-        signedPsbtHex = undefined;
+        setError(psbtErr?.message || 'Failed to prepare offer PSBT');
+        setSubmitting(false);
+        setSubmitStatus('idle');
+        return; // stop — don't submit without PSBT
       }
 
       // Step 3: Submit offer

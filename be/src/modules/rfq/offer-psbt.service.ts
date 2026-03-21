@@ -66,8 +66,7 @@ export class OfferPsbtService {
     // 1. Get borrower record + pubkey
     const borrower = await this.userService.findById(borrowerId);
     if (!borrower?.pubkey) {
-      this.logger.warn(`Borrower ${borrowerId} has no pubkey — cannot build PSBT`);
-      return null;
+      throw new BadRequestException('Borrower has not connected their wallet yet — pubkey required for PSBT');
     }
     const borrowerPubkey = borrower.pubkey;
     const borrowerAddress = this.pubkeyToP2TRAddress(borrowerPubkey);
@@ -85,15 +84,13 @@ export class OfferPsbtService {
     // 3. Fetch lender bUSD Rune UTXOs
     const lenderRuneUtxos = await this.unisatService.fetchRuneUtxos(lenderAddress);
     if (!lenderRuneUtxos.length) {
-      this.logger.warn(`Lender ${lenderAddress} has no bUSD Rune UTXOs`);
-      return null;
+      throw new BadRequestException(`Lender has no bUSD Rune UTXOs at ${lenderAddress}. You need bUSD to make an offer.`);
     }
 
     // 4. Fetch borrower BTC UTXOs
     const borrowerBtcUtxos = await this.unisatService.fetchBtcUtxos(borrowerAddress);
     if (!borrowerBtcUtxos.length) {
-      this.logger.warn(`Borrower ${borrowerAddress} has no BTC UTXOs`);
-      return null;
+      throw new BadRequestException(`Borrower has no BTC UTXOs at ${borrowerAddress}. They need BTC collateral to create a valid loan.`);
     }
 
     // 5. Calculate amounts
@@ -105,8 +102,7 @@ export class OfferPsbtService {
       this.selectUtxos(borrowerBtcUtxos.map(u => ({ ...u, valueSats: u.satoshi })), collateralSats + ESTIMATED_FEE_SATS);
 
     if (borrowerTotalSats < collateralSats + ESTIMATED_FEE_SATS) {
-      this.logger.warn(`Borrower has insufficient BTC: ${borrowerTotalSats} sats < ${collateralSats + ESTIMATED_FEE_SATS} needed`);
-      return null;
+      throw new BadRequestException(`Borrower has insufficient BTC: ${(borrowerTotalSats / 1e8).toFixed(8)} BTC < ${((collateralSats + ESTIMATED_FEE_SATS) / 1e8).toFixed(8)} BTC needed`);
     }
 
     const borrowerChangeSats = borrowerTotalSats - collateralSats - ESTIMATED_FEE_SATS;

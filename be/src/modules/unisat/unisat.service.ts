@@ -192,7 +192,7 @@ export class UnisatService {
    */
   async fetchRuneUtxos(address: string, runeId?: string): Promise<{ txid: string; vout: number; satoshi: number; runeAmount: string }[]> {
     const targetRuneId = runeId ?? this.config.busdRuneId;
-    const url = `${this.config.baseUrl}/v1/indexer/runes/address/${encodeURIComponent(address)}/${encodeURIComponent(targetRuneId)}/utxo`;
+    const url = `${this.config.baseUrl}/v1/indexer/address/${encodeURIComponent(address)}/runes/${encodeURIComponent(targetRuneId)}/utxo`;
     try {
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${this.config.apiKey}`, 'Content-Type': 'application/json' },

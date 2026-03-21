@@ -80,10 +80,6 @@ export class RfqController extends GeneralController {
       rateApr: dto.rateApr,
     });
 
-    if (!result) {
-      return this.response({ data: { psbtHex: null, lenderInputCount: 0, borrowerInputCount: 0, reason: 'Missing UTXOs or pubkeys' } });
-    }
-
     return this.response({ data: result });
   }
 
