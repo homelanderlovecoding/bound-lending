@@ -4,6 +4,7 @@ import { GeneralController } from '../../commons/base-module';
 import { Public } from '../../decorators/public.decorator';
 import { LoanService } from './loan.service';
 import { LoanSigningService } from './loan-signing.service';
+import { UserService } from '../user/user.service';
 import { SignPsbtDto, LoanQueryDto } from './dto/loan.dto';
 
 @ApiTags('Loans')
@@ -13,6 +14,7 @@ export class LoanController extends GeneralController {
   constructor(
     private readonly loanService: LoanService,
     private readonly loanSigningService: LoanSigningService,
+    private readonly userService: UserService,
   ) {
     super();
   }
@@ -27,10 +29,19 @@ export class LoanController extends GeneralController {
 
   @Public()
   @Get()
-  @ApiOperation({ summary: 'List my loans (filter by role, status) — returns empty if unauthenticated' })
-  async getLoans(@Query() query: LoanQueryDto, @Req() req: { user?: { userId: string } }) {
-    if (!req.user?.userId) return this.response({ data: [] });
-    const loans = await this.loanService.getLoansByUser(req.user.userId, query.role);
+  @ApiOperation({ summary: 'List my loans (filter by role, status) — pass address or use JWT' })
+  async getLoans(@Query() query: LoanQueryDto & { address?: string }, @Req() req: { user?: { userId: string } }) {
+    let userId: string | undefined;
+
+    if (query.address) {
+      const user = await this.userService.findByAddress(query.address);
+      userId = user?._id?.toString();
+    } else if (req?.user?.userId) {
+      userId = req.user.userId;
+    }
+
+    if (!userId) return this.response({ data: [] });
+    const loans = await this.loanService.getLoansByUser(userId, query.role);
     return this.response({ data: loans });
   }
 

@@ -52,7 +52,7 @@ export function useMyLoans(role?: string, address?: string) {
   // Include address in key so SWR refetches when wallet connects
   return useSWR<Loan[]>(
     address ? `my-loans-${role ?? 'all'}-${address}` : null,
-    () => loans.list(role ? { role } : undefined),
+    () => loans.list({ ...(role ? { role } : {}), ...(address ? { address } : {}) }),
     { refreshInterval: 15_000 },
   );
 }

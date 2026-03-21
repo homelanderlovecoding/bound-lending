@@ -86,7 +86,7 @@ export const rfq = {
 
 // ===== Loans =====
 export const loans = {
-  list: (params?: { role?: string; status?: string }) => {
+  list: (params?: { role?: string; status?: string; address?: string }) => {
     const query = new URLSearchParams(params as Record<string, string>).toString();
     return request<import('./types').Loan[]>(`/loans${query ? `?${query}` : ''}`);
   },

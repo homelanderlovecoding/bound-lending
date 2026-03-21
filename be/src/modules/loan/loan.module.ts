@@ -8,12 +8,14 @@ import { LoanController } from './loan.controller';
 import { DashboardController } from './dashboard.controller';
 import { EscrowModule } from '../escrow';
 import { RadFiModule } from '../radfi/radfi.module';
+import { UserModule } from '../user/user.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: TABLE_NAME.LOAN, schema: LoanSchema }]),
     EscrowModule,
     RadFiModule,
+    UserModule,
   ],
   controllers: [LoanController, DashboardController],
   providers: [LoanService, LoanSigningService],
