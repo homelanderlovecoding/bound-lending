@@ -122,3 +122,26 @@ export function isWalletInstalled(type: WalletType): boolean {
   if (type === 'xverse') return !!getXverse();
   return false;
 }
+
+/**
+ * Fetch BTC UTXOs for an address from UniSat open API (signet).
+ * Used to build lender commitment PSBTs.
+ */
+export async function fetchBtcUtxos(address: string): Promise<{ txid: string; vout: number; valueSats: number }[]> {
+  const API_KEY = process.env.NEXT_PUBLIC_UNISAT_API_KEY || '';
+  try {
+    const res = await fetch(`https://open-api-signet.unisat.io/v1/indexer/address/${address}/utxo-data?cursor=0&size=50`, {
+      headers: { Authorization: `Bearer ${API_KEY}` },
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+    const utxos = json?.data?.utxo ?? [];
+    return utxos.map((u: any) => ({
+      txid: u.txid,
+      vout: u.vout,
+      valueSats: u.satoshi,
+    }));
+  } catch {
+    return [];
+  }
+}

@@ -8,6 +8,7 @@ import { useOpenRfqs } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth-context';
 import { rfq as rfqApi } from '@/lib/api';
 import { signPsbt } from '@/lib/psbt';
+import { fetchBtcUtxos } from '@/lib/wallet';
 import type { Rfq } from '@/lib/types';
 
 interface LendPanelProps {
@@ -51,23 +52,29 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
     setSubmitStatus('preparing');
 
     try {
-      // Step 1: Prepare commitment PSBT (MVP: no UTXOs)
+      // Step 1: Fetch lender UTXOs from UniSat API
       let signedPsbtHex: string | undefined;
-      const lenderUtxos: { txid: string; vout: number; valueSats: number }[] = [];
+      let lenderUtxos: { txid: string; vout: number; valueSats: number }[] = [];
 
       try {
-        const prepareRes = await rfqApi.prepareOffer(selectedRfq._id, {
-          lenderPubkey: wallet.publicKey,
-          lenderUtxos,
-        });
+        lenderUtxos = await fetchBtcUtxos(wallet.address);
 
-        // Step 2: Sign PSBT if returned
-        if (prepareRes?.psbtHex) {
-          setSubmitStatus('signing');
-          signedPsbtHex = await signPsbt(wallet.type, prepareRes.psbtHex);
+        if (lenderUtxos.length > 0) {
+          // Step 2: Build commitment PSBT with real UTXOs
+          const prepareRes = await rfqApi.prepareOffer(selectedRfq._id, {
+            lenderPubkey: wallet.publicKey,
+            lenderUtxos,
+          });
+
+          // Step 3: Sign PSBT via wallet
+          if (prepareRes?.psbtHex) {
+            setSubmitStatus('signing');
+            signedPsbtHex = await signPsbt(wallet.type, prepareRes.psbtHex);
+          }
         }
-      } catch {
-        // Gracefully degrade — PSBT prepare failed, submit without it
+      } catch (psbtErr: any) {
+        // Gracefully degrade — PSBT flow failed, submit without it
+        console.warn('PSBT prepare/sign failed, submitting without:', psbtErr?.message);
         signedPsbtHex = undefined;
       }
 

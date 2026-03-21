@@ -1,10 +1,12 @@
 {
   "env": {
-    "NEXT_PUBLIC_API_URL": "https://king-rewards-francisco-sugar.trycloudflare.com"
+    "NEXT_PUBLIC_API_URL": "https://king-rewards-francisco-sugar.trycloudflare.com",
+    "NEXT_PUBLIC_UNISAT_API_KEY": "a95f3394aa699823a623281fb041a1494e9a74539f3fdcc1146ccbe01608db85"
   },
   "build": {
     "env": {
-      "NEXT_PUBLIC_API_URL": "https://king-rewards-francisco-sugar.trycloudflare.com"
+      "NEXT_PUBLIC_API_URL": "https://king-rewards-francisco-sugar.trycloudflare.com",
+      "NEXT_PUBLIC_UNISAT_API_KEY": "a95f3394aa699823a623281fb041a1494e9a74539f3fdcc1146ccbe01608db85"
     }
   }
 }
