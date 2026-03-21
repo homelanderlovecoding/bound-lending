@@ -15,6 +15,13 @@ export class UserService extends BaseService<UserEntity> {
   }
 
   /**
+   * Find user by wallet address.
+   */
+  async findByAddress(address: string): Promise<UserEntity | null> {
+    return this.findOne({ address });
+  }
+
+  /**
    * Find user by address, or create a new borrower account.
    */
   async findOrCreateByAddress(address: string, pubkey?: string): Promise<UserEntity> {

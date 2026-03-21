@@ -34,7 +34,7 @@ export function useOpenRfqs() {
 export function useMyRfqs(address?: string) {
   return useSWR<Rfq[]>(
     address ? `my-rfqs-${address}` : null,
-    () => rfq.my(),
+    () => rfq.my(address),
     { refreshInterval: 5_000 },
   );
 }

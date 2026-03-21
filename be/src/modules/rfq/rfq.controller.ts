@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Delete, Body, Param, Req } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Body, Param, Query, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { GeneralController } from '../../commons/base-module';
 import { Public } from '../../decorators/public.decorator';
@@ -46,10 +46,23 @@ export class RfqController extends GeneralController {
     return this.response({ data: rfqs });
   }
 
+  @Public()
   @Get('my')
-  @ApiOperation({ summary: 'Get my RFQs (borrower)' })
-  async getMyRfqs(@Req() req: { user: { userId: string } }) {
-    const rfqs = await this.rfqService.getMyRfqs(req.user.userId);
+  @ApiOperation({ summary: 'Get RFQs for an address (borrower)' })
+  async getMyRfqs(@Query('address') address?: string, @Req() req?: { user?: { userId: string } }) {
+    // If address provided, look up user by address; otherwise use JWT userId
+    let borrowerId: string | undefined;
+
+    if (address) {
+      const user = await this.userService.findByAddress(address);
+      borrowerId = user?._id?.toString();
+    } else if (req?.user?.userId) {
+      borrowerId = req.user.userId;
+    }
+
+    if (!borrowerId) return this.response({ data: [] });
+
+    const rfqs = await this.rfqService.getMyRfqs(borrowerId);
     return this.response({ data: rfqs });
   }
 

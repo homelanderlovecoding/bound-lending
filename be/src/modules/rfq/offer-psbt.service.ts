@@ -5,6 +5,7 @@ import * as ecc from 'tiny-secp256k1';
 import { ENV_REGISTER } from '../../commons/constants';
 import { IBitcoinConfig, ILendingConfig } from '../../commons/types';
 import { MultisigService, RuneService } from '../escrow';
+import { MetadataService } from '../escrow/metadata.service';
 import { UnisatService } from '../unisat/unisat.service';
 import { UserService } from '../user/user.service';
 
@@ -41,6 +42,7 @@ export class OfferPsbtService {
   constructor(
     private readonly multisigService: MultisigService,
     private readonly runeService: RuneService,
+    private readonly metadataService: MetadataService,
     private readonly unisatService: UnisatService,
     private readonly userService: UserService,
     private readonly configService: ConfigService,
@@ -190,14 +192,31 @@ export class OfferPsbtService {
     // Pointer → output 3 (lender change — all remaining bUSD)
     const runestoneScript = this.runeService.buildBusdRunestone(
       [{ outputIndex: 0, amount: loanAmountRune }],
-      3, // pointer → lender change output
+      4, // pointer → lender change output (after metadata OP_RETURN at index 3)
     );
     psbt.addOutput({
       script: runestoneScript,
       value: 0,
     });
 
-    // Output 3: bUSD Rune change → Lender (dust carrier, Runestone pointer sends remaining bUSD here)
+    // Output 3: OP_RETURN loan metadata (BNDL + CBOR)
+    const metadata = this.metadataService.encodeMetadata({
+      type: 'origination',
+      loanId: rfqId,
+      amountUsd,
+      collateralBtc,
+      rateApr,
+      originationDate: new Date().toISOString().split('T')[0],
+      repaymentDate: new Date(Date.now() + termDays * 86400000).toISOString().split('T')[0],
+      lenderId: 'pending',
+      borrowerId,
+    });
+    psbt.addOutput({
+      script: bitcoin.script.compile([bitcoin.opcodes.OP_RETURN, metadata]),
+      value: 0,
+    });
+
+    // Output 4: bUSD Rune change → Lender (dust carrier, Runestone pointer sends remaining bUSD here)
     const lenderTotalSats = lenderRuneUtxos.reduce((s, u) => s + u.satoshi, 0);
     const lenderChangeSats = lenderTotalSats - 546; // minus borrower output carrier
     psbt.addOutput({
