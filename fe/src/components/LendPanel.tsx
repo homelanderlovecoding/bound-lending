@@ -7,6 +7,7 @@ import { formatNumber, formatUsd, calculateLtv, ltvColor } from '@/lib/utils';
 import { useOpenRfqs } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth-context';
 import { rfq as rfqApi } from '@/lib/api';
+import { signPsbt } from '@/lib/psbt';
 import type { Rfq } from '@/lib/types';
 
 interface LendPanelProps {
@@ -37,6 +38,8 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
   // Pre-fill rate if editing
   const [rateApr, setRateApr] = useState('');
   
+  const [submitStatus, setSubmitStatus] = useState<'idle' | 'preparing' | 'signing' | 'submitting'>('idle');
+
   const handleSubmitOffer = async () => {
     if (!wallet) { setError('Connect your wallet to submit an offer'); return; }
     if (!selectedRfq || !rateApr) return;
@@ -45,8 +48,37 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
 
     setError('');
     setSubmitting(true);
+    setSubmitStatus('preparing');
+
     try {
-      const res = await rfqApi.submitOffer(selectedRfq._id, { lenderPubkey: wallet.publicKey, rateApr: rate });
+      // Step 1: Prepare commitment PSBT (MVP: no UTXOs)
+      let signedPsbtHex: string | undefined;
+      const lenderUtxos: { txid: string; vout: number; valueSats: number }[] = [];
+
+      try {
+        const prepareRes = await rfqApi.prepareOffer(selectedRfq._id, {
+          lenderPubkey: wallet.publicKey,
+          lenderUtxos,
+        });
+
+        // Step 2: Sign PSBT if returned
+        if (prepareRes?.psbtHex) {
+          setSubmitStatus('signing');
+          signedPsbtHex = await signPsbt(wallet.type, prepareRes.psbtHex);
+        }
+      } catch {
+        // Gracefully degrade — PSBT prepare failed, submit without it
+        signedPsbtHex = undefined;
+      }
+
+      // Step 3: Submit offer
+      setSubmitStatus('submitting');
+      const res = await rfqApi.submitOffer(selectedRfq._id, {
+        lenderPubkey: wallet.publicKey,
+        rateApr: rate,
+        lenderUtxos,
+        ...(signedPsbtHex ? { signedPsbtHex } : {}),
+      });
       const msg = (res as any)?.message ?? (myExistingOffer ? 'Offer updated' : 'Offer submitted');
       setSuccess(`${msg} at ${rate}% APR`);
       setSelectedRfq(null);
@@ -56,6 +88,7 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
       setError(err.message || 'Failed to submit offer');
     } finally {
       setSubmitting(false);
+      setSubmitStatus('idle');
     }
   };
 
@@ -276,7 +309,7 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
               className="w-full py-3.5 border-none rounded-full text-[15px] font-semibold cursor-pointer font-body bg-[var(--gold-dark)] text-[var(--parchment)] hover:bg-[var(--gold-light)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              {myExistingOffer ? 'Update Offer' : 'Submit Offer'}
+              {submitStatus === 'preparing' ? 'Preparing offer...' : submitStatus === 'signing' ? 'Signing...' : submitStatus === 'submitting' ? 'Submitting...' : myExistingOffer ? 'Update Offer' : 'Submit Offer'}
             </button>
           </div>
         )}

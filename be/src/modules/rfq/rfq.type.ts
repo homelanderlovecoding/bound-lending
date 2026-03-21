@@ -15,6 +15,8 @@ export interface IRfqOfferParams {
   lenderPubkey: string;
   rateApr: number;
   walletBalanceBusd?: number; // lender bUSD balance for coverage check
+  lenderUtxos?: { txid: string; vout: number; valueSats: number }[];
+  signedPsbtHex?: string;
 }
 
 export interface IRfqAdjustOfferParams {

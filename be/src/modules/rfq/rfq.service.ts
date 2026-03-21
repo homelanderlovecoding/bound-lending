@@ -9,6 +9,7 @@ import { ILendingConfig } from '../../commons/types';
 import { RfqEntity, ERfqStatus, ERfqOfferStatus } from '../../database/entities';
 import { UserService } from '../user/user.service';
 import { IRfqCreateParams, IRfqOfferParams, IRfqAdjustOfferParams } from './rfq.type';
+import { UtxoLockService } from './utxo-lock.service';
 
 @Injectable()
 export class RfqService extends BaseService<RfqEntity> {
@@ -21,6 +22,7 @@ export class RfqService extends BaseService<RfqEntity> {
     private readonly userService: UserService,
     private readonly eventEmitter: EventEmitter2,
     private readonly configService: ConfigService,
+    private readonly utxoLockService: UtxoLockService,
   ) {
     super(rfqModel);
     this.lendingConfig = this.configService.get<ILendingConfig>(ENV_REGISTER.LENDING)!;
@@ -142,16 +144,30 @@ export class RfqService extends BaseService<RfqEntity> {
     );
 
     if (existingIdx !== -1) {
-      // Update existing offer rate
+      // Update existing offer — release old UTXOs, lock new ones
+      const existingOffer = rfq.offers[existingIdx];
+      if (params.lenderUtxos && params.lenderUtxos.length > 0) {
+        this.utxoLockService.releaseUtxos(params.lenderId, existingOffer.lockedUtxos ?? []);
+        this.utxoLockService.lockUtxos(params.lenderId, params.lenderUtxos);
+      }
+
+      const setFields: Record<string, unknown> = { 'offers.$.rateApr': params.rateApr };
+      if (params.signedPsbtHex !== undefined) setFields['offers.$.offerPsbt'] = params.signedPsbtHex;
+      if (params.lenderUtxos !== undefined) setFields['offers.$.lockedUtxos'] = params.lenderUtxos;
+
       const updated = await this.findOneAndUpdate(
         { _id: params.rfqId, 'offers.lender': new Types.ObjectId(params.lenderId), 'offers.status': ERfqOfferStatus.PENDING },
-        { $set: { 'offers.$.rateApr': params.rateApr } },
+        { $set: setFields },
       );
       this.logger.log(`Lender ${params.lenderId} adjusted offer on RFQ ${params.rfqId} → ${params.rateApr}% APR`);
       return { rfq: updated!, isUpdate: true };
     }
 
     // New offer
+    if (params.lenderUtxos && params.lenderUtxos.length > 0) {
+      this.utxoLockService.lockUtxos(params.lenderId, params.lenderUtxos);
+    }
+
     const offer = {
       _id: new Types.ObjectId(),
       lender: new Types.ObjectId(params.lenderId),
@@ -159,6 +175,8 @@ export class RfqService extends BaseService<RfqEntity> {
       rateApr: params.rateApr,
       status: ERfqOfferStatus.PENDING,
       createdAt: new Date(),
+      ...(params.signedPsbtHex !== undefined ? { offerPsbt: params.signedPsbtHex } : {}),
+      lockedUtxos: params.lenderUtxos ?? [],
     };
 
     const updated = await this.findByIdAndUpdate(params.rfqId, {
@@ -180,6 +198,12 @@ export class RfqService extends BaseService<RfqEntity> {
   async withdrawOffer(rfqId: string, offerId: string, lenderId: string): Promise<RfqEntity> {
     const rfq = await this.findByIdOrThrow(rfqId);
     this.validateOfferBelongsToLender(rfq, offerId, lenderId);
+
+    // Release locked UTXOs before withdrawing
+    const offer = rfq.offers.find((o) => o._id.toString() === offerId);
+    if (offer?.lockedUtxos?.length) {
+      this.utxoLockService.releaseUtxos(lenderId, offer.lockedUtxos);
+    }
 
     const updated = await this.findOneAndUpdate(
       { _id: rfqId, 'offers._id': offerId },

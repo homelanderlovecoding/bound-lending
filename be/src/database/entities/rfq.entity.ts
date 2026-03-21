@@ -35,6 +35,14 @@ export class RfqOfferSubDoc {
 
   @Prop({ type: Date, default: Date.now })
   createdAt: Date;
+
+  /** Signed partial PSBT hex (lender-signed commitment) */
+  @Prop({ type: String })
+  offerPsbt?: string;
+
+  /** UTXOs locked by lender for this offer */
+  @Prop({ type: [{ txid: String, vout: Number, valueSats: Number }], default: [] })
+  lockedUtxos: { txid: string; vout: number; valueSats: number }[];
 }
 
 @Schema({ timestamps: true, collection: 'rfqs' })

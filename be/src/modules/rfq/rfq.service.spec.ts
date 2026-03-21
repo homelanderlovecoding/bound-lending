@@ -78,7 +78,7 @@ describe('RfqService', () => {
       .overrideProvider(RfqService)
       .useFactory({
         factory: () => {
-          const svc = new RfqService({} as any, userService as any, mockEventEmitter as any, mockConfigService as any);
+          const svc = new RfqService({} as any, userService as any, mockEventEmitter as any, mockConfigService as any, { lockUtxos: () => {}, releaseUtxos: () => {}, releaseAllForLender: () => {}, isLocked: () => false, validateNoConflicts: () => {} } as any);
           return svc;
         },
       })

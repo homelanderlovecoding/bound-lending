@@ -1,4 +1,4 @@
-import { IsNumber, IsString, IsNotEmpty, Min, IsOptional } from 'class-validator';
+import { IsNumber, IsString, IsNotEmpty, Min, IsOptional, IsArray } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateRfqDto {
@@ -40,6 +40,27 @@ export class SubmitOfferDto {
   @IsNumber()
   @Min(0)
   walletBalanceBusd?: number;
+
+  @ApiPropertyOptional({ description: 'Lender UTXOs to lock for this offer' })
+  @IsOptional()
+  @IsArray()
+  lenderUtxos?: { txid: string; vout: number; valueSats: number }[];
+
+  @ApiPropertyOptional({ description: 'Lender-signed PSBT hex commitment' })
+  @IsOptional()
+  @IsString()
+  signedPsbtHex?: string;
+}
+
+export class PrepareOfferDto {
+  @ApiProperty({ description: 'Lender public key (hex)' })
+  @IsString()
+  @IsNotEmpty()
+  lenderPubkey: string;
+
+  @ApiProperty({ description: 'Lender UTXOs to include in commitment PSBT' })
+  @IsArray()
+  lenderUtxos: { txid: string; vout: number; valueSats: number }[];
 }
 
 export class AcceptOfferDto {

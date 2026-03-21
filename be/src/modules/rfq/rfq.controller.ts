@@ -1,12 +1,17 @@
 import { Controller, Post, Get, Delete, Body, Param, Req, UnauthorizedException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
+import * as bitcoin from 'bitcoinjs-lib';
 import { GeneralController } from '../../commons/base-module';
 import { Public } from '../../decorators/public.decorator';
+import { ENV_REGISTER } from '../../commons/constants';
+import { IBitcoinConfig, ILendingConfig } from '../../commons/types';
 import { RfqService } from './rfq.service';
 import { PriceFeedService } from '../price-feed/price-feed.service';
 import { LoanService } from '../loan/loan.service';
 import { UserService } from '../user/user.service';
-import { CreateRfqDto, SubmitOfferDto, AcceptOfferDto } from './dto/rfq.dto';
+import { OfferPsbtService } from './offer-psbt.service';
+import { CreateRfqDto, SubmitOfferDto, AcceptOfferDto, PrepareOfferDto } from './dto/rfq.dto';
 
 @ApiTags('RFQ')
 @ApiBearerAuth()
@@ -17,6 +22,8 @@ export class RfqController extends GeneralController {
     private readonly priceFeedService: PriceFeedService,
     private readonly loanService: LoanService,
     private readonly userService: UserService,
+    private readonly offerPsbtService: OfferPsbtService,
+    private readonly configService: ConfigService,
   ) {
     super();
   }
@@ -59,6 +66,38 @@ export class RfqController extends GeneralController {
     return this.response({ data: rfq });
   }
 
+  @Post(':id/offers/prepare')
+  @ApiOperation({ summary: 'Build unsigned lender commitment PSBT' })
+  async prepareOffer(
+    @Param('id') rfqId: string,
+    @Body() dto: PrepareOfferDto,
+    @Req() req: { user: { userId: string } },
+  ) {
+    const rfq = await this.rfqService.findByIdOrThrow(rfqId);
+
+    // Load borrower user record to get pubkey
+    const borrower = await this.userService.findById(rfq.borrower.toString());
+    if (!borrower?.pubkey) {
+      return this.response({ data: { psbtHex: null, reason: 'Borrower has not connected wallet' } });
+    }
+
+    const lendingConfig = this.configService.get<ILendingConfig>(ENV_REGISTER.LENDING)!;
+    const btcConfig = this.configService.get<IBitcoinConfig>(ENV_REGISTER.BITCOIN)!;
+    const network =
+      btcConfig.network === 'mainnet' ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
+
+    const psbtHex = await this.offerPsbtService.buildLenderOfferPsbt({
+      borrowerPubkey: borrower.pubkey,
+      lenderPubkey: dto.lenderPubkey,
+      lenderUtxos: dto.lenderUtxos,
+      amountUsd: rfq.amountUsd,
+      originationFeePct: lendingConfig.originationFeePct,
+      network,
+    });
+
+    return this.response({ data: { psbtHex } });
+  }
+
   @Post(':id/offers')
   @ApiOperation({ summary: 'Submit offer to RFQ (lender)' })
   async submitOffer(
@@ -72,6 +111,8 @@ export class RfqController extends GeneralController {
       lenderPubkey: dto.lenderPubkey,
       rateApr: dto.rateApr,
       walletBalanceBusd: dto.walletBalanceBusd,
+      lenderUtxos: dto.lenderUtxos,
+      signedPsbtHex: dto.signedPsbtHex,
     });
     return this.response({ data: rfq, message: isUpdate ? 'Offer updated' : 'Offer submitted' });
   }

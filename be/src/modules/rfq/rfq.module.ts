@@ -7,6 +7,9 @@ import { RfqController } from './rfq.controller';
 import { UserModule } from '../user/user.module';
 import { PriceFeedModule } from '../price-feed/price-feed.module';
 import { LoanModule } from '../loan/loan.module';
+import { EscrowModule } from '../escrow';
+import { UtxoLockService } from './utxo-lock.service';
+import { OfferPsbtService } from './offer-psbt.service';
 
 @Module({
   imports: [
@@ -14,9 +17,10 @@ import { LoanModule } from '../loan/loan.module';
     UserModule,
     PriceFeedModule,
     LoanModule,
+    EscrowModule,
   ],
   controllers: [RfqController],
-  providers: [RfqService],
+  providers: [RfqService, UtxoLockService, OfferPsbtService],
   exports: [RfqService],
 })
 export class RfqModule {}

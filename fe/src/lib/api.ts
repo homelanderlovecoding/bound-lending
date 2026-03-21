@@ -61,7 +61,12 @@ export const rfq = {
       body: JSON.stringify(data),
     }),
   get: (id: string) => request<import('./types').Rfq>(`/rfqs/${id}`),
-  submitOffer: (rfqId: string, data: { lenderPubkey: string; rateApr: number; walletBalanceBusd?: number }) =>
+  prepareOffer: (rfqId: string, data: { lenderPubkey: string; lenderUtxos: { txid: string; vout: number; valueSats: number }[] }) =>
+    request<{ psbtHex: string | null; reason?: string }>(`/rfqs/${rfqId}/offers/prepare`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  submitOffer: (rfqId: string, data: { lenderPubkey: string; rateApr: number; walletBalanceBusd?: number; lenderUtxos?: { txid: string; vout: number; valueSats: number }[]; signedPsbtHex?: string }) =>
     request<{ data: import('./types').Rfq; message: string }>(`/rfqs/${rfqId}/offers`, {
       method: 'POST',
       body: JSON.stringify(data),
