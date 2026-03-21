@@ -32,7 +32,9 @@ export class OfferPsbtService {
     amountUsd: number;
     originationFeePct: number;
     network: bitcoin.Network;
-  }): Promise<string> {
+  }): Promise<string | null> {
+    // Can't build a valid PSBT with no inputs — return null, caller handles gracefully
+    if (!params.lenderUtxos || params.lenderUtxos.length === 0) return null;
     const { borrowerPubkey, lenderPubkey, lenderUtxos, amountUsd, originationFeePct, network } =
       params;
 
