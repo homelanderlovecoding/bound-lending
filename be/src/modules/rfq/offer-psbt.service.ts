@@ -187,17 +187,24 @@ export class OfferPsbtService {
       value: collateralSats,
     });
 
+    // Calculate total lender bUSD to determine if Rune change output is needed
+    const totalLenderRuneAmount = lenderRuneUtxos.reduce(
+      (sum, u) => sum + BigInt(u.runeAmount || '0'), 0n,
+    );
+    const needsRuneChange = totalLenderRuneAmount > loanAmountRune;
+    const lenderTotalSats = lenderRuneUtxos.reduce((s, u) => s + u.satoshi, 0);
+
+    // Track the next output index for dynamic layout
+    let nextIdx = 2; // 0=borrower bUSD, 1=multisig BTC
+
     // Output 2: OP_RETURN Runestone
-    // Edict: loanAmount bUSD → output 0 (borrower)
-    // Pointer → output 3 (lender change — all remaining bUSD)
+    const runeChangeOutputIdx = needsRuneChange ? nextIdx + 2 : 0; // point to lender change, or back to borrower if no change
     const runestoneScript = this.runeService.buildBusdRunestone(
       [{ outputIndex: 0, amount: loanAmountRune }],
-      4, // pointer → lender change output (after metadata OP_RETURN at index 3)
+      runeChangeOutputIdx,
     );
-    psbt.addOutput({
-      script: runestoneScript,
-      value: 0,
-    });
+    psbt.addOutput({ script: runestoneScript, value: 0 });
+    nextIdx++;
 
     // Output 3: OP_RETURN loan metadata (BNDL + CBOR)
     const metadata = this.metadataService.encodeMetadata({
@@ -215,16 +222,19 @@ export class OfferPsbtService {
       script: bitcoin.script.compile([bitcoin.opcodes.OP_RETURN, metadata]),
       value: 0,
     });
+    nextIdx++;
 
-    // Output 4: bUSD Rune change → Lender (dust carrier, Runestone pointer sends remaining bUSD here)
-    const lenderTotalSats = lenderRuneUtxos.reduce((s, u) => s + u.satoshi, 0);
-    const lenderChangeSats = lenderTotalSats - 546; // minus borrower output carrier
-    psbt.addOutput({
-      address: lenderAddress,
-      value: lenderChangeSats >= 546 ? lenderChangeSats : 546,
-    });
+    // Output 4 (optional): bUSD Rune change → Lender
+    if (needsRuneChange) {
+      const lenderChangeSats = lenderTotalSats - 546; // minus borrower output carrier
+      psbt.addOutput({
+        address: lenderAddress,
+        value: lenderChangeSats >= 546 ? lenderChangeSats : 546,
+      });
+      nextIdx++;
+    }
 
-    // Output 4: BTC change → Borrower (if above dust)
+    // Output N: BTC change → Borrower (if above dust)
     if (borrowerChangeSats >= 546) {
       psbt.addOutput({
         address: borrowerAddress,
