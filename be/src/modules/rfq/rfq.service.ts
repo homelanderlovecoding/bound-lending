@@ -154,6 +154,8 @@ export class RfqService extends BaseService<RfqEntity> {
       const setFields: Record<string, unknown> = { 'offers.$.rateApr': params.rateApr };
       if (params.signedPsbtHex !== undefined) setFields['offers.$.offerPsbt'] = params.signedPsbtHex;
       if (params.lenderUtxos !== undefined) setFields['offers.$.lockedUtxos'] = params.lenderUtxos;
+      if (params.lenderInputCount !== undefined) setFields['offers.$.lenderInputCount'] = params.lenderInputCount;
+      if (params.borrowerInputCount !== undefined) setFields['offers.$.borrowerInputCount'] = params.borrowerInputCount;
 
       const updated = await this.findOneAndUpdate(
         { _id: params.rfqId, 'offers.lender': new Types.ObjectId(params.lenderId), 'offers.status': ERfqOfferStatus.PENDING },
@@ -177,6 +179,8 @@ export class RfqService extends BaseService<RfqEntity> {
       createdAt: new Date(),
       ...(params.signedPsbtHex !== undefined ? { offerPsbt: params.signedPsbtHex } : {}),
       lockedUtxos: params.lenderUtxos ?? [],
+      lenderInputCount: params.lenderInputCount,
+      borrowerInputCount: params.borrowerInputCount,
     };
 
     const updated = await this.findByIdAndUpdate(params.rfqId, {

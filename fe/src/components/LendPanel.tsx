@@ -54,6 +54,7 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
       // Step 1: Build complete origination PSBT (BE fetches all UTXOs)
       let signedPsbtHex: string | undefined;
       let lenderInputCount = 0;
+      let borrowerInputCount = 0;
 
       try {
         const prepareRes = await rfqApi.prepareOffer(selectedRfq._id, {
@@ -63,6 +64,7 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
 
         if (prepareRes?.psbtHex) {
           lenderInputCount = prepareRes.lenderInputCount ?? 0;
+          borrowerInputCount = prepareRes.borrowerInputCount ?? 0;
           // Step 2: Lender signs their inputs via wallet
           setSubmitStatus('signing');
           signedPsbtHex = await signPsbt(wallet.type, prepareRes.psbtHex, {
@@ -82,7 +84,7 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
       const res = await rfqApi.submitOffer(selectedRfq._id, {
         lenderPubkey: wallet.publicKey,
         rateApr: rate,
-        ...(signedPsbtHex ? { signedPsbtHex } : {}),
+        ...(signedPsbtHex ? { signedPsbtHex, lenderInputCount, borrowerInputCount } : {}),
       });
       const msg = (res as any)?.message ?? (myExistingOffer ? 'Offer updated' : 'Offer submitted');
       setSuccess(`${msg} at ${rate}% APR`);

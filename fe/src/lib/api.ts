@@ -66,7 +66,7 @@ export const rfq = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  submitOffer: (rfqId: string, data: { lenderPubkey: string; rateApr: number; walletBalanceBusd?: number; lenderUtxos?: { txid: string; vout: number; valueSats: number }[]; signedPsbtHex?: string }) =>
+  submitOffer: (rfqId: string, data: { lenderPubkey: string; rateApr: number; walletBalanceBusd?: number; lenderUtxos?: { txid: string; vout: number; valueSats: number }[]; signedPsbtHex?: string; lenderInputCount?: number; borrowerInputCount?: number }) =>
     request<{ data: import('./types').Rfq; message: string }>(`/rfqs/${rfqId}/offers`, {
       method: 'POST',
       body: JSON.stringify(data),

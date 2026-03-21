@@ -50,6 +50,16 @@ export class SubmitOfferDto {
   @IsOptional()
   @IsString()
   signedPsbtHex?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  lenderInputCount?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  borrowerInputCount?: number;
 }
 
 export class PrepareOfferDto {

@@ -43,6 +43,12 @@ export class RfqOfferSubDoc {
   /** UTXOs locked by lender for this offer */
   @Prop({ type: [{ txid: String, vout: Number, valueSats: Number }], default: [] })
   lockedUtxos: { txid: string; vout: number; valueSats: number }[];
+
+  @Prop({ type: Number })
+  lenderInputCount?: number;
+
+  @Prop({ type: Number })
+  borrowerInputCount?: number;
 }
 
 @Schema({ timestamps: true, collection: 'rfqs' })

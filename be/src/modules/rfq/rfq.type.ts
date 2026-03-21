@@ -17,6 +17,8 @@ export interface IRfqOfferParams {
   walletBalanceBusd?: number; // lender bUSD balance for coverage check
   lenderUtxos?: { txid: string; vout: number; valueSats: number }[];
   signedPsbtHex?: string;
+  lenderInputCount?: number;
+  borrowerInputCount?: number;
 }
 
 export interface IRfqAdjustOfferParams {

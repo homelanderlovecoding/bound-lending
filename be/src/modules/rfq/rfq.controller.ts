@@ -111,6 +111,8 @@ export class RfqController extends GeneralController {
       walletBalanceBusd: dto.walletBalanceBusd,
       lenderUtxos: dto.lenderUtxos,
       signedPsbtHex: dto.signedPsbtHex,
+      lenderInputCount: dto.lenderInputCount,
+      borrowerInputCount: dto.borrowerInputCount,
     });
     return this.response({ data: rfq, message: isUpdate ? 'Offer updated' : 'Offer submitted' });
   }
@@ -169,14 +171,14 @@ export class RfqController extends GeneralController {
 
     // 6. If lender already signed a PSBT at offer time, carry it to the loan
     const offerPsbt = (acceptedOffer as any).offerPsbt;
-    const lockedUtxos = (acceptedOffer as any).lockedUtxos;
     if (offerPsbt) {
       await this.loanService.findByIdAndUpdate(loan._id.toString(), {
         $set: {
           originationPsbt: offerPsbt,
           'signatures.lender': true,
           'psbt.lenderSigned': offerPsbt,
-          'psbt.lenderInputCount': lockedUtxos?.length ?? 0,
+          'psbt.lenderInputCount': (acceptedOffer as any).lenderInputCount ?? 0,
+          'psbt.borrowerInputCount': (acceptedOffer as any).borrowerInputCount ?? 0,
         },
       });
     }
