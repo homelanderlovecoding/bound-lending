@@ -4,10 +4,9 @@ import * as bitcoin from 'bitcoinjs-lib';
 import * as ecc from 'tiny-secp256k1';
 import { ENV_REGISTER } from '../../commons/constants';
 import { IBitcoinConfig, ILendingConfig } from '../../commons/types';
-import { MultisigService } from '../escrow';
+import { MultisigService, RuneService } from '../escrow';
 import { UnisatService } from '../unisat/unisat.service';
 import { UserService } from '../user/user.service';
-import { MetadataService } from '../escrow/metadata.service';
 
 const ESTIMATED_FEE_SATS = 2000;
 
@@ -35,9 +34,9 @@ export class OfferPsbtService {
 
   constructor(
     private readonly multisigService: MultisigService,
+    private readonly runeService: RuneService,
     private readonly unisatService: UnisatService,
     private readonly userService: UserService,
-    private readonly metadataService: MetadataService,
     private readonly configService: ConfigService,
   ) {
     bitcoin.initEccLib(ecc);
@@ -145,40 +144,49 @@ export class OfferPsbtService {
     const borrowerInputCount = selectedBorrowerUtxos.length;
 
     // -- Outputs --
+    // Layout:
+    //   [0] bUSD → Borrower       (loan disbursement, Rune via Runestone edict)
+    //   [1] BTC  → Multisig P2TR  (collateral locked)
+    //   [2] bUSD → Bound          (origination fee, Rune via Runestone edict)
+    //   [3] OP_RETURN Runestone    (Rune transfer edicts + change pointer)
+    //   [4] BTC change → Borrower (if any)
+    //   [5] bUSD change → Lender  (Rune change via Runestone pointer)
 
-    // Output 0: bUSD → Borrower (loan disbursement — Rune carried via Runestone)
-    // Rune outputs use 546 sats (dust) as the BTC carrier
+    const loanAmountRune = this.runeService.toBusdSmallestUnit(amountUsd);
+    const feeAmountRune = this.runeService.toBusdSmallestUnit(amountUsd * (originationFeePct / 100));
+
+    // Output 0: bUSD → Borrower (546 sats dust carrier for Rune)
     psbt.addOutput({
       address: borrowerAddress,
       value: 546,
     });
 
-    // Output 1: BTC → P2TR multisig (collateral locked)
+    // Output 1: BTC → P2TR multisig (collateral)
     psbt.addOutput({
       address: multisigResult.address,
       value: collateralSats,
     });
 
-    // Output 2: bUSD → Bound (origination fee — Rune carried via Runestone)
+    // Output 2: bUSD → Bound (546 sats dust carrier for Rune fee)
     psbt.addOutput({
       address: boundAddress,
       value: 546,
     });
 
-    // Output 3: OP_RETURN Runestone (Rune transfer instructions)
-    const metadata = this.metadataService.encodeMetadata({
-      type: 'origination',
-      loanId: rfqId, // use rfqId at offer time, updated to loanId at accept
-      amountUsd,
-      collateralBtc,
-      rateApr,
-      originationDate: new Date().toISOString().split('T')[0],
-      repaymentDate: new Date(Date.now() + termDays * 86400000).toISOString().split('T')[0],
-      lenderId: 'pending',
-      borrowerId,
-    });
+    // Output 3: OP_RETURN Runestone — Rune transfer instructions
+    // Edict 1: loanAmount bUSD → output 0 (borrower)
+    // Edict 2: feeAmount bUSD → output 2 (bound)
+    // Pointer: output 5 = lender change (unallocated Runes go here)
+    const lenderChangeOutputIndex = 5; // will be output 5
+    const runestoneScript = this.runeService.buildBusdRunestone(
+      [
+        { outputIndex: 0, amount: loanAmountRune },
+        { outputIndex: 2, amount: feeAmountRune },
+      ],
+      lenderChangeOutputIndex,
+    );
     psbt.addOutput({
-      script: bitcoin.script.compile([bitcoin.opcodes.OP_RETURN, metadata]),
+      script: runestoneScript,
       value: 0,
     });
 
@@ -190,13 +198,19 @@ export class OfferPsbtService {
       });
     }
 
-    // Output 5: bUSD Rune change → Lender (dust carrier for remaining Runes)
+    // Output 5: bUSD Rune change → Lender (dust carrier, Runestone pointer sends remaining Runes here)
     const lenderTotalSats = lenderRuneUtxos.reduce((s, u) => s + u.satoshi, 0);
-    const lenderChangeSats = lenderTotalSats - 546 - 546; // minus borrower output + fee output carriers
+    const lenderChangeSats = lenderTotalSats - 546 - 546; // minus output 0 + output 2 carriers
     if (lenderChangeSats >= 546) {
       psbt.addOutput({
         address: lenderAddress,
         value: lenderChangeSats,
+      });
+    } else {
+      // Even if no BTC change, we need the change output for Rune pointer
+      psbt.addOutput({
+        address: lenderAddress,
+        value: 546,
       });
     }
 
