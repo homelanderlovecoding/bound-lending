@@ -149,13 +149,7 @@ function OffersDrawer({
       // 3. Borrower signs their inputs
       if (wallet) {
         setSignStatus('Sign the origination PSBT in your wallet...');
-        const lenderCount = psbtData.lenderInputCount ?? 0;
-        const borrowerCount = psbtData.borrowerInputCount ?? 0;
-        const borrowerIndices = Array.from({ length: borrowerCount }, (_, i) => lenderCount + i);
-
-        const signedHex = await signPsbt(wallet.type, psbtData.psbtHex, {
-          inputsToSign: borrowerIndices.length > 0 ? borrowerIndices : undefined,
-        });
+        const signedHex = await signPsbt(wallet.type, psbtData.psbtHex);
 
         // 4. Submit signature
         setSignStatus('Broadcasting transaction...');

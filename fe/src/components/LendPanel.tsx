@@ -67,10 +67,7 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
           borrowerInputCount = prepareRes.borrowerInputCount ?? 0;
           // Step 2: Lender signs their inputs via wallet
           setSubmitStatus('signing');
-          signedPsbtHex = await signPsbt(wallet.type, prepareRes.psbtHex, {
-            // Only sign lender inputs (first N inputs)
-            inputsToSign: Array.from({ length: lenderInputCount }, (_, i) => i),
-          });
+          signedPsbtHex = await signPsbt(wallet.type, prepareRes.psbtHex);
         }
       } catch (psbtErr: any) {
         setError(psbtErr?.message || 'Failed to prepare offer PSBT');

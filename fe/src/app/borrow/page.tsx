@@ -305,12 +305,7 @@ export default function BorrowPage() {
                           setError('');
                           const psbtData = await loansApi.getOriginationPsbt(id);
                           if (!psbtData?.psbtHex) { setError('No origination PSBT found'); return; }
-                          const lenderCount = psbtData.lenderInputCount ?? 0;
-                          const borrowerCount = psbtData.borrowerInputCount ?? 0;
-                          const borrowerIndices = Array.from({ length: borrowerCount }, (_, i) => lenderCount + i);
-                          const signed = await signPsbt(wallet.type, psbtData.psbtHex, {
-                            inputsToSign: borrowerIndices.length > 0 ? borrowerIndices : undefined,
-                          });
+                          const signed = await signPsbt(wallet.type, psbtData.psbtHex);
                           await loansApi.signOrigination(id, signed);
                           mutateMyLoans();
                         } catch (err: any) {
