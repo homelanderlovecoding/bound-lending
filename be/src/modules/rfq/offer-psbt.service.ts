@@ -147,13 +147,11 @@ export class OfferPsbtService {
     // Layout:
     //   [0] bUSD → Borrower       (loan disbursement, Rune via Runestone edict)
     //   [1] BTC  → Multisig P2TR  (collateral locked)
-    //   [2] bUSD → Bound          (origination fee, Rune via Runestone edict)
-    //   [3] OP_RETURN Runestone    (Rune transfer edicts + change pointer)
+    //   [2] OP_RETURN Runestone    (Rune edict + change pointer)
+    //   [3] bUSD change → Lender  (Rune change via Runestone pointer)
     //   [4] BTC change → Borrower (if any)
-    //   [5] bUSD change → Lender  (Rune change via Runestone pointer)
 
     const loanAmountRune = this.runeService.toBusdSmallestUnit(amountUsd);
-    const feeAmountRune = this.runeService.toBusdSmallestUnit(amountUsd * (originationFeePct / 100));
 
     // Output 0: bUSD → Borrower (546 sats dust carrier for Rune)
     psbt.addOutput({
@@ -167,27 +165,24 @@ export class OfferPsbtService {
       value: collateralSats,
     });
 
-    // Output 2: bUSD → Bound (546 sats dust carrier for Rune fee)
-    psbt.addOutput({
-      address: boundAddress,
-      value: 546,
-    });
-
-    // Output 3: OP_RETURN Runestone — Rune transfer instructions
-    // Edict 1: loanAmount bUSD → output 0 (borrower)
-    // Edict 2: feeAmount bUSD → output 2 (bound)
-    // Pointer: output 5 = lender change (unallocated Runes go here)
-    const lenderChangeOutputIndex = 5; // will be output 5
+    // Output 2: OP_RETURN Runestone
+    // Edict: loanAmount bUSD → output 0 (borrower)
+    // Pointer → output 3 (lender change — all remaining bUSD)
     const runestoneScript = this.runeService.buildBusdRunestone(
-      [
-        { outputIndex: 0, amount: loanAmountRune },
-        { outputIndex: 2, amount: feeAmountRune },
-      ],
-      lenderChangeOutputIndex,
+      [{ outputIndex: 0, amount: loanAmountRune }],
+      3, // pointer → lender change output
     );
     psbt.addOutput({
       script: runestoneScript,
       value: 0,
+    });
+
+    // Output 3: bUSD Rune change → Lender (dust carrier, Runestone pointer sends remaining bUSD here)
+    const lenderTotalSats = lenderRuneUtxos.reduce((s, u) => s + u.satoshi, 0);
+    const lenderChangeSats = lenderTotalSats - 546; // minus borrower output carrier
+    psbt.addOutput({
+      address: lenderAddress,
+      value: lenderChangeSats >= 546 ? lenderChangeSats : 546,
     });
 
     // Output 4: BTC change → Borrower (if above dust)
@@ -195,22 +190,6 @@ export class OfferPsbtService {
       psbt.addOutput({
         address: borrowerAddress,
         value: borrowerChangeSats,
-      });
-    }
-
-    // Output 5: bUSD Rune change → Lender (dust carrier, Runestone pointer sends remaining Runes here)
-    const lenderTotalSats = lenderRuneUtxos.reduce((s, u) => s + u.satoshi, 0);
-    const lenderChangeSats = lenderTotalSats - 546 - 546; // minus output 0 + output 2 carriers
-    if (lenderChangeSats >= 546) {
-      psbt.addOutput({
-        address: lenderAddress,
-        value: lenderChangeSats,
-      });
-    } else {
-      // Even if no BTC change, we need the change output for Rune pointer
-      psbt.addOutput({
-        address: lenderAddress,
-        value: 546,
       });
     }
 
