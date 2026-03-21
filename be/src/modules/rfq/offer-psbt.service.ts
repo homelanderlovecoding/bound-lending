@@ -8,7 +8,13 @@ import { MultisigService, RuneService } from '../escrow';
 import { UnisatService } from '../unisat/unisat.service';
 import { UserService } from '../user/user.service';
 
-const ESTIMATED_FEE_SATS = 2000;
+// P2TR input ~58 vBytes, P2TR output ~43 vBytes, overhead ~10 vBytes
+const P2TR_INPUT_VBYTES = 58;
+const P2TR_OUTPUT_VBYTES = 43;
+const TX_OVERHEAD_VBYTES = 10;
+const OP_RETURN_VBYTES = 40; // Runestone OP_RETURN ~20-40 vBytes
+
+
 
 /**
  * Builds the complete origination PSBT at offer time.
@@ -92,19 +98,33 @@ export class OfferPsbtService {
       throw new BadRequestException(`Borrower has no BTC UTXOs at ${borrowerAddress}. They need BTC collateral to create a valid loan.`);
     }
 
-    // 5. Calculate amounts
+    // 5. Get dynamic fee rate from UniSat
+    const feeRates = await this.unisatService.getRecommendedFees();
+    const feeRateSatPerVb = Math.max(feeRates.halfHourFee, 1); // use halfHour, min 1
+
+    // Estimate tx size: inputs + outputs + overhead
+    const estimatedInputs = lenderRuneUtxos.length + borrowerBtcUtxos.length;
+    const estimatedOutputs = 5; // borrower Rune + multisig + OP_RETURN + lender change + borrower BTC change
+    const estimatedVbytes = TX_OVERHEAD_VBYTES
+      + (estimatedInputs * P2TR_INPUT_VBYTES)
+      + (estimatedOutputs * P2TR_OUTPUT_VBYTES)
+      + OP_RETURN_VBYTES;
+    const estimatedFeeSats = estimatedVbytes * feeRateSatPerVb;
+
+    this.logger.log(`Fee estimate: ${estimatedVbytes} vB × ${feeRateSatPerVb} sat/vB = ${estimatedFeeSats} sats`);
+
+    // 6. Calculate amounts
     const collateralSats = Math.round(collateralBtc * 1e8);
-    const feeUsd = amountUsd * (originationFeePct / 100);
 
     // Select borrower UTXOs to cover collateral + fee
     const { selected: selectedBorrowerUtxos, totalSats: borrowerTotalSats } =
-      this.selectUtxos(borrowerBtcUtxos.map(u => ({ ...u, valueSats: u.satoshi })), collateralSats + ESTIMATED_FEE_SATS);
+      this.selectUtxos(borrowerBtcUtxos.map(u => ({ ...u, valueSats: u.satoshi })), collateralSats + estimatedFeeSats);
 
-    if (borrowerTotalSats < collateralSats + ESTIMATED_FEE_SATS) {
-      throw new BadRequestException(`Borrower has insufficient BTC: ${(borrowerTotalSats / 1e8).toFixed(8)} BTC < ${((collateralSats + ESTIMATED_FEE_SATS) / 1e8).toFixed(8)} BTC needed`);
+    if (borrowerTotalSats < collateralSats + estimatedFeeSats) {
+      throw new BadRequestException(`Borrower has insufficient BTC: ${(borrowerTotalSats / 1e8).toFixed(8)} BTC < ${((collateralSats + estimatedFeeSats) / 1e8).toFixed(8)} BTC needed`);
     }
 
-    const borrowerChangeSats = borrowerTotalSats - collateralSats - ESTIMATED_FEE_SATS;
+    const borrowerChangeSats = borrowerTotalSats - collateralSats - estimatedFeeSats;
 
     // 6. Build PSBT
     const psbt = new bitcoin.Psbt({ network: this.network });

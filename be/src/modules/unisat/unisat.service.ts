@@ -212,6 +212,25 @@ export class UnisatService {
     }
   }
 
+  /**
+   * Get recommended fee rates (sat/vB).
+   * GET /v1/indexer/fees/recommended
+   */
+  async getRecommendedFees(): Promise<{ fastestFee: number; halfHourFee: number; hourFee: number; economyFee: number }> {
+    const url = `${this.config.baseUrl}/v1/indexer/fees/recommended`;
+    try {
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${this.config.apiKey}`, 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error(`UniSat fees HTTP ${res.status}`);
+      const json = await res.json();
+      return json.data ?? { fastestFee: 2, halfHourFee: 2, hourFee: 1, economyFee: 1 };
+    } catch (error) {
+      this.logger.error(`UniSat fees fetch failed: ${error}`);
+      return { fastestFee: 2, halfHourFee: 2, hourFee: 1, economyFee: 1 };
+    }
+  }
+
   private emptyBalance(address: string, runeId: string): IUnisatBalanceResult {
     return { address, runeId, amount: 0, amountRaw: '0', divisibility: 0 };
   }
