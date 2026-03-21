@@ -8,7 +8,6 @@ import { useOpenRfqs } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth-context';
 import { rfq as rfqApi } from '@/lib/api';
 import { signPsbt } from '@/lib/psbt';
-import { fetchBtcUtxos } from '@/lib/wallet';
 import type { Rfq } from '@/lib/types';
 
 interface LendPanelProps {
@@ -52,25 +51,24 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
     setSubmitStatus('preparing');
 
     try {
-      // Step 1: Fetch lender UTXOs from UniSat API
+      // Step 1: Build complete origination PSBT (BE fetches all UTXOs)
       let signedPsbtHex: string | undefined;
-      let lenderUtxos: { txid: string; vout: number; valueSats: number }[] = [];
+      let lenderInputCount = 0;
 
       try {
-        lenderUtxos = await fetchBtcUtxos(wallet.address);
+        const prepareRes = await rfqApi.prepareOffer(selectedRfq._id, {
+          lenderPubkey: wallet.publicKey,
+          rateApr: rate,
+        });
 
-        if (lenderUtxos.length > 0) {
-          // Step 2: Build commitment PSBT with real UTXOs
-          const prepareRes = await rfqApi.prepareOffer(selectedRfq._id, {
-            lenderPubkey: wallet.publicKey,
-            lenderUtxos,
+        if (prepareRes?.psbtHex) {
+          lenderInputCount = prepareRes.lenderInputCount ?? 0;
+          // Step 2: Lender signs their inputs via wallet
+          setSubmitStatus('signing');
+          signedPsbtHex = await signPsbt(wallet.type, prepareRes.psbtHex, {
+            // Only sign lender inputs (first N inputs)
+            inputsToSign: Array.from({ length: lenderInputCount }, (_, i) => i),
           });
-
-          // Step 3: Sign PSBT via wallet
-          if (prepareRes?.psbtHex) {
-            setSubmitStatus('signing');
-            signedPsbtHex = await signPsbt(wallet.type, prepareRes.psbtHex);
-          }
         }
       } catch (psbtErr: any) {
         // Gracefully degrade — PSBT flow failed, submit without it
@@ -83,7 +81,6 @@ export default function LendPanel({ btcPrice }: LendPanelProps) {
       const res = await rfqApi.submitOffer(selectedRfq._id, {
         lenderPubkey: wallet.publicKey,
         rateApr: rate,
-        lenderUtxos,
         ...(signedPsbtHex ? { signedPsbtHex } : {}),
       });
       const msg = (res as any)?.message ?? (myExistingOffer ? 'Offer updated' : 'Offer submitted');

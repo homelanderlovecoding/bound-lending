@@ -58,9 +58,10 @@ export class PrepareOfferDto {
   @IsNotEmpty()
   lenderPubkey: string;
 
-  @ApiProperty({ description: 'Lender UTXOs to include in commitment PSBT' })
-  @IsArray()
-  lenderUtxos: { txid: string; vout: number; valueSats: number }[];
+  @ApiProperty({ description: 'Offered APR' })
+  @IsNumber()
+  @Min(0)
+  rateApr: number;
 }
 
 export class AcceptOfferDto {

@@ -10,16 +10,30 @@ import type { WalletType } from './wallet';
 export async function signPsbt(
   type: WalletType,
   psbtHex: string,
-  opts?: { broadcast?: boolean; finalize?: boolean },
+  opts?: {
+    broadcast?: boolean;
+    finalize?: boolean;
+    inputsToSign?: number[];  // which input indices this wallet should sign
+  },
 ): Promise<string> {
   if (type === 'unisat') {
     const unisat = (window as any).unisat;
     if (!unisat) throw new Error('UniSat not connected');
 
-    // UniSat signPsbt returns signed PSBT hex
-    const signed = await unisat.signPsbt(psbtHex, {
+    const signOpts: any = {
       autoFinalized: opts?.finalize ?? false,
-    });
+    };
+
+    // If specific inputs requested, use toSignInputs
+    if (opts?.inputsToSign && opts.inputsToSign.length > 0) {
+      const address = (await unisat.getAccounts())?.[0];
+      signOpts.toSignInputs = opts.inputsToSign.map((index) => ({
+        index,
+        address,
+      }));
+    }
+
+    const signed = await unisat.signPsbt(psbtHex, signOpts);
     return signed;
   }
 
@@ -27,12 +41,23 @@ export async function signPsbt(
     const provider = (window as any).BitcoinProvider;
     if (!provider) throw new Error('Xverse not connected');
 
-    const response = await provider.request('signPsbt', {
+    const signOpts: any = {
       psbt: psbtHex,
-      allowedSighash: [0x00, 0x01, 0x02, 0x03, 0x81, 0x82, 0x83], // all sighash types
+      allowedSighash: [0x00, 0x01, 0x02, 0x03, 0x81, 0x82, 0x83],
       broadcast: opts?.broadcast ?? false,
-    });
+    };
 
+    // If specific inputs requested, tell Xverse which to sign
+    if (opts?.inputsToSign && opts.inputsToSign.length > 0) {
+      signOpts.signInputs = {};
+      const accounts = await provider.request('getAccounts', null);
+      const address = accounts?.result?.[0]?.address;
+      if (address) {
+        signOpts.signInputs[address] = opts.inputsToSign;
+      }
+    }
+
+    const response = await provider.request('signPsbt', signOpts);
     return response?.result?.psbt ?? response?.result;
   }
 

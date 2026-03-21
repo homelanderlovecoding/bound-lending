@@ -161,6 +161,57 @@ export class UnisatService {
     return info.blockHeight;
   }
 
+  /**
+   * Fetch BTC UTXOs for an address.
+   * GET /v1/indexer/address/{address}/utxo-data
+   */
+  async fetchBtcUtxos(address: string): Promise<{ txid: string; vout: number; satoshi: number }[]> {
+    const url = `${this.config.baseUrl}/v1/indexer/address/${encodeURIComponent(address)}/utxo-data?cursor=0&size=100`;
+    try {
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${this.config.apiKey}`, 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error(`UniSat BTC UTXOs HTTP ${res.status}`);
+      const json = await res.json();
+      if (json.code !== 0) return [];
+      return (json.data?.utxo ?? []).map((u: any) => ({
+        txid: u.txid,
+        vout: u.vout,
+        satoshi: u.satoshi,
+      }));
+    } catch (error) {
+      this.logger.error(`UniSat BTC UTXOs fetch failed for ${address}: ${error}`);
+      return [];
+    }
+  }
+
+  /**
+   * Fetch Rune UTXOs for an address + runeId.
+   * GET /v1/indexer/runes/address/{address}/{runeid}/utxo
+   * Returns UTXOs that hold the specified Rune.
+   */
+  async fetchRuneUtxos(address: string, runeId?: string): Promise<{ txid: string; vout: number; satoshi: number; runeAmount: string }[]> {
+    const targetRuneId = runeId ?? this.config.busdRuneId;
+    const url = `${this.config.baseUrl}/v1/indexer/runes/address/${encodeURIComponent(address)}/${encodeURIComponent(targetRuneId)}/utxo`;
+    try {
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${this.config.apiKey}`, 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error(`UniSat Rune UTXOs HTTP ${res.status}`);
+      const json = await res.json();
+      if (json.code !== 0) return [];
+      return (json.data?.utxo ?? json.data ?? []).map((u: any) => ({
+        txid: u.txid,
+        vout: u.vout,
+        satoshi: u.satoshi ?? 546,
+        runeAmount: u.runes?.[0]?.amount ?? u.amount ?? '0',
+      }));
+    } catch (error) {
+      this.logger.error(`UniSat Rune UTXOs fetch failed for ${address}/${targetRuneId}: ${error}`);
+      return [];
+    }
+  }
+
   private emptyBalance(address: string, runeId: string): IUnisatBalanceResult {
     return { address, runeId, amount: 0, amountRaw: '0', divisibility: 0 };
   }

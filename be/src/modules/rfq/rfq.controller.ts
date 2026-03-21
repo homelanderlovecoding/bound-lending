@@ -1,11 +1,7 @@
-import { Controller, Post, Get, Delete, Body, Param, Req, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Body, Param, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { ConfigService } from '@nestjs/config';
-import * as bitcoin from 'bitcoinjs-lib';
 import { GeneralController } from '../../commons/base-module';
 import { Public } from '../../decorators/public.decorator';
-import { ENV_REGISTER } from '../../commons/constants';
-import { IBitcoinConfig, ILendingConfig } from '../../commons/types';
 import { RfqService } from './rfq.service';
 import { PriceFeedService } from '../price-feed/price-feed.service';
 import { LoanService } from '../loan/loan.service';
@@ -23,7 +19,6 @@ export class RfqController extends GeneralController {
     private readonly loanService: LoanService,
     private readonly userService: UserService,
     private readonly offerPsbtService: OfferPsbtService,
-    private readonly configService: ConfigService,
   ) {
     super();
   }
@@ -67,7 +62,7 @@ export class RfqController extends GeneralController {
   }
 
   @Post(':id/offers/prepare')
-  @ApiOperation({ summary: 'Build unsigned lender commitment PSBT' })
+  @ApiOperation({ summary: 'Build complete origination PSBT — lender signs, borrower signs at accept' })
   async prepareOffer(
     @Param('id') rfqId: string,
     @Body() dto: PrepareOfferDto,
@@ -75,27 +70,21 @@ export class RfqController extends GeneralController {
   ) {
     const rfq = await this.rfqService.findByIdOrThrow(rfqId);
 
-    // Load borrower user record to get pubkey
-    const borrower = await this.userService.findById(rfq.borrower.toString());
-    if (!borrower?.pubkey) {
-      return this.response({ data: { psbtHex: null, reason: 'Borrower has not connected wallet' } });
-    }
-
-    const lendingConfig = this.configService.get<ILendingConfig>(ENV_REGISTER.LENDING)!;
-    const btcConfig = this.configService.get<IBitcoinConfig>(ENV_REGISTER.BITCOIN)!;
-    const network =
-      btcConfig.network === 'mainnet' ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
-
-    const psbtHex = await this.offerPsbtService.buildLenderOfferPsbt({
-      borrowerPubkey: borrower.pubkey,
+    const result = await this.offerPsbtService.buildOriginationPsbt({
+      rfqId,
+      borrowerId: rfq.borrower.toString(),
       lenderPubkey: dto.lenderPubkey,
-      lenderUtxos: dto.lenderUtxos,
+      collateralBtc: rfq.collateralBtc,
       amountUsd: rfq.amountUsd,
-      originationFeePct: lendingConfig.originationFeePct,
-      network,
+      termDays: rfq.termDays,
+      rateApr: dto.rateApr,
     });
 
-    return this.response({ data: { psbtHex } });
+    if (!result) {
+      return this.response({ data: { psbtHex: null, lenderInputCount: 0, borrowerInputCount: 0, reason: 'Missing UTXOs or pubkeys' } });
+    }
+
+    return this.response({ data: result });
   }
 
   @Post(':id/offers')

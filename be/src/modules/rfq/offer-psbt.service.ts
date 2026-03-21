@@ -1,114 +1,246 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as ecc from 'tiny-secp256k1';
 import { ENV_REGISTER } from '../../commons/constants';
-import { IBitcoinConfig } from '../../commons/types';
+import { IBitcoinConfig, ILendingConfig } from '../../commons/types';
 import { MultisigService } from '../escrow';
+import { UnisatService } from '../unisat/unisat.service';
+import { UserService } from '../user/user.service';
+import { MetadataService } from '../escrow/metadata.service';
+
+const ESTIMATED_FEE_SATS = 2000;
 
 /**
- * Builds unsigned lender commitment PSBTs for RFQ offers.
- * Isolated from LoanModule to avoid circular dependency.
+ * Builds the complete origination PSBT at offer time.
+ *
+ * Inputs:
+ *   [0..n] Lender bUSD Rune UTXOs   — lender signs at offer time
+ *   [n..m] Borrower BTC UTXOs       — borrower signs at accept time
+ *
+ * Outputs:
+ *   [0] bUSD → Borrower address     (loan disbursement, carries Rune via Runestone)
+ *   [1] BTC  → P2TR multisig        (collateral locked)
+ *   [2] bUSD → Bound address        (origination fee, carries Rune via Runestone)
+ *   [3] OP_RETURN Runestone          (Rune transfer instructions)
+ *   [4] BTC change → Borrower       (if any)
+ *   [5] bUSD change → Lender        (if any)
  */
 @Injectable()
 export class OfferPsbtService {
+  private readonly logger = new Logger(OfferPsbtService.name);
+  private readonly network: bitcoin.Network;
+  private readonly btcConfig: IBitcoinConfig;
+  private readonly lendingConfig: ILendingConfig;
+
   constructor(
     private readonly multisigService: MultisigService,
+    private readonly unisatService: UnisatService,
+    private readonly userService: UserService,
+    private readonly metadataService: MetadataService,
     private readonly configService: ConfigService,
   ) {
     bitcoin.initEccLib(ecc);
+    this.btcConfig = this.configService.get<IBitcoinConfig>(ENV_REGISTER.BITCOIN)!;
+    this.lendingConfig = this.configService.get<ILendingConfig>(ENV_REGISTER.LENDING)!;
+    this.network = this.resolveNetwork(this.btcConfig.network);
   }
 
   /**
-   * Build an unsigned PSBT representing the lender's funding commitment.
-   * Inputs: lender UTXOs
-   * Output 0: loanAmountSats → 3-party P2TR multisig address
-   * Output 1: feeSats → Bound P2TR address
+   * Build complete origination PSBT for lender to sign.
+   * Returns PSBT hex + metadata for storage.
    */
-  async buildLenderOfferPsbt(params: {
-    borrowerPubkey: string;
+  async buildOriginationPsbt(params: {
+    rfqId: string;
+    borrowerId: string;
     lenderPubkey: string;
-    lenderUtxos: { txid: string; vout: number; valueSats: number }[];
+    collateralBtc: number;
     amountUsd: number;
-    originationFeePct: number;
-    network: bitcoin.Network;
-  }): Promise<string | null> {
-    // Can't build a valid PSBT with no inputs — return null, caller handles gracefully
-    if (!params.lenderUtxos || params.lenderUtxos.length === 0) return null;
-    const { borrowerPubkey, lenderPubkey, lenderUtxos, amountUsd, originationFeePct, network } =
-      params;
+    termDays: number;
+    rateApr: number;
+  }): Promise<{ psbtHex: string; lenderInputCount: number; borrowerInputCount: number } | null> {
+    const { rfqId, borrowerId, lenderPubkey, collateralBtc, amountUsd, termDays, rateApr } = params;
+    const boundPubkey = this.btcConfig.boundPubkey;
+    const originationFeePct = this.lendingConfig.originationFeePct;
 
-    const btcConfig = this.configService.get<IBitcoinConfig>(ENV_REGISTER.BITCOIN)!;
-    const boundPubkey = btcConfig.boundPubkey;
+    // 1. Get borrower record + pubkey
+    const borrower = await this.userService.findById(borrowerId);
+    if (!borrower?.pubkey) {
+      this.logger.warn(`Borrower ${borrowerId} has no pubkey — cannot build PSBT`);
+      return null;
+    }
+    const borrowerPubkey = borrower.pubkey;
+    const borrowerAddress = this.pubkeyToP2TRAddress(borrowerPubkey);
+    const lenderAddress = this.pubkeyToP2TRAddress(lenderPubkey);
+    const boundAddress = this.pubkeyToP2TRAddress(boundPubkey);
 
-    // Build P2TR taproot 3-party multisig address (borrower + lender + bound)
+    // 2. Build P2TR multisig address
     const multisigResult = this.multisigService.createTaprootMultisig({
       borrowerPubkey,
       lenderPubkey,
       boundPubkey,
-      network,
+      network: this.network,
     });
 
-    // Derive lender P2TR address from lenderPubkey
-    const lenderPubkeyBuf = Buffer.from(lenderPubkey, 'hex');
-    const lenderXOnly = lenderPubkeyBuf.slice(1); // drop parity byte
-    const lenderP2tr = bitcoin.payments.p2tr({ internalPubkey: lenderXOnly, network });
-    const lenderScript = lenderP2tr.output!;
-
-    // Derive Bound P2TR address from boundPubkey
-    const boundPubkeyBuf = Buffer.from(boundPubkey, 'hex');
-    const boundXOnly = boundPubkeyBuf.slice(1);
-    const boundP2tr = bitcoin.payments.p2tr({ internalPubkey: boundXOnly, network });
-    const boundAddress = boundP2tr.address!;
-
-    // For Rune-based lending, loanAmountSats represents bUSD Rune value in sats.
-    // On signet MVP without real Runes, we use a nominal commitment output (546 = dust limit)
-    // so the PSBT is valid and wallet can sign. The real amount is tracked off-chain.
-    const ESTIMATED_FEE_SATS = 2000;
-    const totalInputSats = lenderUtxos.reduce((sum, u) => sum + u.valueSats, 0);
-    const commitmentSats = 546; // nominal output to multisig (Rune transfer placeholder)
-    const feeSats = 546;         // nominal fee output to Bound
-    const changeSats = totalInputSats - commitmentSats - feeSats - ESTIMATED_FEE_SATS;
-
-    if (changeSats < 0) {
-      return null; // insufficient funds for even a nominal commitment
+    // 3. Fetch lender bUSD Rune UTXOs
+    const lenderRuneUtxos = await this.unisatService.fetchRuneUtxos(lenderAddress);
+    if (!lenderRuneUtxos.length) {
+      this.logger.warn(`Lender ${lenderAddress} has no bUSD Rune UTXOs`);
+      return null;
     }
 
-    const psbt = new bitcoin.Psbt({ network });
+    // 4. Fetch borrower BTC UTXOs
+    const borrowerBtcUtxos = await this.unisatService.fetchBtcUtxos(borrowerAddress);
+    if (!borrowerBtcUtxos.length) {
+      this.logger.warn(`Borrower ${borrowerAddress} has no BTC UTXOs`);
+      return null;
+    }
 
-    // Add lender UTXOs as inputs (P2TR key-path spend)
-    for (const utxo of lenderUtxos) {
+    // 5. Calculate amounts
+    const collateralSats = Math.round(collateralBtc * 1e8);
+    const feeUsd = amountUsd * (originationFeePct / 100);
+
+    // Select borrower UTXOs to cover collateral + fee
+    const { selected: selectedBorrowerUtxos, totalSats: borrowerTotalSats } =
+      this.selectUtxos(borrowerBtcUtxos.map(u => ({ ...u, valueSats: u.satoshi })), collateralSats + ESTIMATED_FEE_SATS);
+
+    if (borrowerTotalSats < collateralSats + ESTIMATED_FEE_SATS) {
+      this.logger.warn(`Borrower has insufficient BTC: ${borrowerTotalSats} sats < ${collateralSats + ESTIMATED_FEE_SATS} needed`);
+      return null;
+    }
+
+    const borrowerChangeSats = borrowerTotalSats - collateralSats - ESTIMATED_FEE_SATS;
+
+    // 6. Build PSBT
+    const psbt = new bitcoin.Psbt({ network: this.network });
+
+    // -- Lender inputs (bUSD Rune UTXOs) --
+    const lenderXOnly = Buffer.from(lenderPubkey, 'hex').slice(1);
+    const lenderScript = bitcoin.payments.p2tr({ internalPubkey: lenderXOnly, network: this.network }).output!;
+
+    for (const utxo of lenderRuneUtxos) {
       psbt.addInput({
         hash: utxo.txid,
         index: utxo.vout,
         witnessUtxo: {
           script: lenderScript,
+          value: utxo.satoshi,
+        },
+        tapInternalKey: lenderXOnly,
+      });
+    }
+    const lenderInputCount = lenderRuneUtxos.length;
+
+    // -- Borrower inputs (BTC UTXOs) --
+    const borrowerXOnly = Buffer.from(borrowerPubkey, 'hex').slice(1);
+    const borrowerScript = bitcoin.payments.p2tr({ internalPubkey: borrowerXOnly, network: this.network }).output!;
+
+    for (const utxo of selectedBorrowerUtxos) {
+      psbt.addInput({
+        hash: utxo.txid,
+        index: utxo.vout,
+        witnessUtxo: {
+          script: borrowerScript,
           value: utxo.valueSats,
         },
-        tapInternalKey: lenderXOnly, // required for UniSat to sign P2TR inputs
+        tapInternalKey: borrowerXOnly,
       });
     }
+    const borrowerInputCount = selectedBorrowerUtxos.length;
 
-    // Output 0: commitment → multisig P2TR (Rune transfer placeholder)
+    // -- Outputs --
+
+    // Output 0: bUSD → Borrower (loan disbursement — Rune carried via Runestone)
+    // Rune outputs use 546 sats (dust) as the BTC carrier
+    psbt.addOutput({
+      address: borrowerAddress,
+      value: 546,
+    });
+
+    // Output 1: BTC → P2TR multisig (collateral locked)
     psbt.addOutput({
       address: multisigResult.address,
-      value: commitmentSats,
+      value: collateralSats,
     });
 
-    // Output 1: origination fee → Bound P2TR
+    // Output 2: bUSD → Bound (origination fee — Rune carried via Runestone)
     psbt.addOutput({
       address: boundAddress,
-      value: feeSats,
+      value: 546,
     });
 
-    // Output 2: change back to lender
-    if (changeSats >= 546) {
+    // Output 3: OP_RETURN Runestone (Rune transfer instructions)
+    const metadata = this.metadataService.encodeMetadata({
+      type: 'origination',
+      loanId: rfqId, // use rfqId at offer time, updated to loanId at accept
+      amountUsd,
+      collateralBtc,
+      rateApr,
+      originationDate: new Date().toISOString().split('T')[0],
+      repaymentDate: new Date(Date.now() + termDays * 86400000).toISOString().split('T')[0],
+      lenderId: 'pending',
+      borrowerId,
+    });
+    psbt.addOutput({
+      script: bitcoin.script.compile([bitcoin.opcodes.OP_RETURN, metadata]),
+      value: 0,
+    });
+
+    // Output 4: BTC change → Borrower (if above dust)
+    if (borrowerChangeSats >= 546) {
       psbt.addOutput({
-        address: lenderP2tr.address!,
-        value: changeSats,
+        address: borrowerAddress,
+        value: borrowerChangeSats,
       });
     }
 
-    return psbt.toHex();
+    // Output 5: bUSD Rune change → Lender (dust carrier for remaining Runes)
+    const lenderTotalSats = lenderRuneUtxos.reduce((s, u) => s + u.satoshi, 0);
+    const lenderChangeSats = lenderTotalSats - 546 - 546; // minus borrower output + fee output carriers
+    if (lenderChangeSats >= 546) {
+      psbt.addOutput({
+        address: lenderAddress,
+        value: lenderChangeSats,
+      });
+    }
+
+    const psbtHex = psbt.toHex();
+    this.logger.log(`Built origination PSBT for RFQ ${rfqId}: ${lenderInputCount} lender inputs, ${borrowerInputCount} borrower inputs, ${psbt.txOutputs.length} outputs`);
+
+    return { psbtHex, lenderInputCount, borrowerInputCount };
+  }
+
+  /**
+   * Select UTXOs to cover a target amount (simple greedy).
+   */
+  private selectUtxos(
+    utxos: { txid: string; vout: number; valueSats: number }[],
+    targetSats: number,
+  ): { selected: { txid: string; vout: number; valueSats: number }[]; totalSats: number } {
+    const sorted = [...utxos].sort((a, b) => b.valueSats - a.valueSats);
+    const selected: typeof utxos = [];
+    let total = 0;
+    for (const u of sorted) {
+      selected.push(u);
+      total += u.valueSats;
+      if (total >= targetSats) break;
+    }
+    return { selected, totalSats: total };
+  }
+
+  private pubkeyToP2TRAddress(pubkeyHex: string): string {
+    const pubkeyBuf = Buffer.from(pubkeyHex, 'hex');
+    const xOnly = pubkeyBuf.slice(1);
+    const p2tr = bitcoin.payments.p2tr({ internalPubkey: xOnly, network: this.network });
+    return p2tr.address!;
+  }
+
+  private resolveNetwork(network: string): bitcoin.Network {
+    switch (network) {
+      case 'mainnet': return bitcoin.networks.bitcoin;
+      case 'signet':
+      case 'testnet': return bitcoin.networks.testnet;
+      default: return bitcoin.networks.regtest;
+    }
   }
 }

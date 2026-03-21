@@ -61,8 +61,8 @@ export const rfq = {
       body: JSON.stringify(data),
     }),
   get: (id: string) => request<import('./types').Rfq>(`/rfqs/${id}`),
-  prepareOffer: (rfqId: string, data: { lenderPubkey: string; lenderUtxos: { txid: string; vout: number; valueSats: number }[] }) =>
-    request<{ psbtHex: string | null; reason?: string }>(`/rfqs/${rfqId}/offers/prepare`, {
+  prepareOffer: (rfqId: string, data: { lenderPubkey: string; rateApr: number }) =>
+    request<{ psbtHex: string | null; lenderInputCount?: number; borrowerInputCount?: number; reason?: string }>(`/rfqs/${rfqId}/offers/prepare`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
