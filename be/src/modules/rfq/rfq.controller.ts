@@ -40,29 +40,15 @@ export class RfqController extends GeneralController {
 
   @Public()
   @Get()
-  @ApiOperation({ summary: 'List all open RFQs (lender discovery feed)' })
-  async getOpenRfqs() {
-    const rfqs = await this.rfqService.getOpenRfqs();
-    return this.response({ data: rfqs });
-  }
-
-  @Public()
-  @Get('my')
-  @ApiOperation({ summary: 'Get RFQs for an address (borrower)' })
-  async getMyRfqs(@Query('address') address?: string, @Req() req?: { user?: { userId: string } }) {
-    // If address provided, look up user by address; otherwise use JWT userId
-    let borrowerId: string | undefined;
-
+  @ApiOperation({ summary: 'List RFQs — pass address for my RFQs, omit for all open' })
+  async getRfqs(@Query('address') address?: string) {
     if (address) {
       const user = await this.userService.findByAddress(address);
-      borrowerId = user?._id?.toString();
-    } else if (req?.user?.userId) {
-      borrowerId = req.user.userId;
+      if (!user) return this.response({ data: [] });
+      const rfqs = await this.rfqService.getMyRfqs(user._id.toString());
+      return this.response({ data: rfqs });
     }
-
-    if (!borrowerId) return this.response({ data: [] });
-
-    const rfqs = await this.rfqService.getMyRfqs(borrowerId);
+    const rfqs = await this.rfqService.getOpenRfqs();
     return this.response({ data: rfqs });
   }
 

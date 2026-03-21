@@ -358,10 +358,16 @@ export class LoanSigningService {
         body: JSON.stringify({ rawTx: txHex, isBroadcast: true }),
       });
       const json = await res.json();
-      return json?.data?.txid ?? json?.txid ?? txHex.slice(0, 64);
+      this.logger.log(`Broadcast response: ${JSON.stringify(json)}`);
+      const txid = json?.data?.txid ?? json?.txid;
+      if (!txid) {
+        this.logger.error(`Broadcast returned no txid. Response: ${JSON.stringify(json)}`);
+        throw new Error('No txid in broadcast response');
+      }
+      return txid;
     } catch (err) {
       this.logger.error(`Broadcast failed: ${err}`);
-      throw new BadRequestException('Transaction broadcast failed');
+      throw new BadRequestException(`Transaction broadcast failed: ${(err as Error).message}`);
     }
   }
 
