@@ -166,6 +166,15 @@ export class LoanEntity extends BaseEntity {
   /** Unsigned origination PSBT (hex) */
   @Prop({ type: String })
   originationPsbt: string;
+
+  /** PSBT signing state */
+  @Prop({ type: Object, default: {} })
+  psbt: {
+    lenderSigned?: string;     // lender-signed PSBT hex
+    borrowerSigned?: string;   // borrower-signed PSBT hex
+    lenderInputCount?: number; // how many inputs belong to lender
+    borrowerInputCount?: number; // how many inputs belong to borrower
+  };
 }
 
 export const LoanSchema = SchemaFactory.createForClass(LoanEntity);

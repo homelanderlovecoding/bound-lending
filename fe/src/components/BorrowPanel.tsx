@@ -6,7 +6,8 @@ import { Plus, Clock, ChevronDown, ChevronUp, Loader2, X, Check } from 'lucide-r
 import { formatNumber, calculateLtv, ltvColor } from '@/lib/utils';
 import { useMyRfqs } from '@/lib/hooks';
 import { useAuth } from '@/lib/auth-context';
-import { rfq as rfqApi } from '@/lib/api';
+import { rfq as rfqApi, loans as loansApi } from '@/lib/api';
+import { signPsbt } from '@/lib/psbt';
 import { useBtcPrice, useLendingConfig } from '@/lib/hooks';
 import BorrowInputForm from './BorrowInputForm';
 import type { Rfq, LoanOffer } from '@/lib/types';
@@ -121,7 +122,9 @@ function OffersDrawer({
   onClose: () => void;
   onAccepted: (loanId: string) => void;
 }) {
+  const { wallet } = useAuth();
   const [accepting, setAccepting] = useState<string | null>(null);
+  const [signStatus, setSignStatus] = useState<string | null>(null);
   const [error, setError] = useState('');
   const pendingOffers = rfq.offers?.filter((o) => o.status === 'pending') ?? [];
 
@@ -129,13 +132,45 @@ function OffersDrawer({
     setError('');
     setAccepting(offerId);
     try {
+      // 1. Accept offer → creates loan
+      setSignStatus('Accepting offer...');
       const res = await rfqApi.accept(rfq._id, offerId) as any;
-      if (res?.loanId) onAccepted(res.loanId);
-      else onClose();
+      const loanId = res?.loanId;
+      if (!loanId) { onClose(); return; }
+
+      // 2. Get origination PSBT (may already have lender signature)
+      setSignStatus('Loading origination PSBT...');
+      const psbtData = await loansApi.getOriginationPsbt(loanId);
+      if (!psbtData?.psbtHex) {
+        onAccepted(loanId);
+        return;
+      }
+
+      // 3. Borrower signs their inputs
+      if (wallet) {
+        setSignStatus('Sign the origination PSBT in your wallet...');
+        const lenderCount = psbtData.lenderInputCount ?? 0;
+        const borrowerCount = psbtData.borrowerInputCount ?? 0;
+        const borrowerIndices = Array.from({ length: borrowerCount }, (_, i) => lenderCount + i);
+
+        const signedHex = await signPsbt(wallet.type, psbtData.psbtHex, {
+          inputsToSign: borrowerIndices.length > 0 ? borrowerIndices : undefined,
+        });
+
+        // 4. Submit signature
+        setSignStatus('Broadcasting transaction...');
+        const result = await loansApi.signOrigination(loanId, signedHex);
+        if (result?.txid) {
+          setSignStatus(`Loan active! TX: ${result.txid.slice(0, 12)}...`);
+        }
+      }
+
+      onAccepted(loanId);
     } catch (err: any) {
       setError(err.message || 'Failed to accept offer');
     } finally {
       setAccepting(null);
+      setSignStatus(null);
     }
   };
 
@@ -208,7 +243,7 @@ function OffersDrawer({
                         className="w-full py-2.5 border-none rounded-full text-[13px] font-semibold cursor-pointer bg-[var(--gold-dark)] text-[var(--parchment)] hover:bg-[var(--gold-light)] disabled:opacity-50 flex items-center justify-center gap-2"
                       >
                         {accepting === offer._id ? (
-                          <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Accepting…</>
+                          <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {signStatus || 'Accepting…'}</>
                         ) : (
                           <><Check className="w-3.5 h-3.5" /> Accept this offer</>
                         )}

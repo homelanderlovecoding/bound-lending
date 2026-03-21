@@ -163,7 +163,11 @@ export class LoanSigningService {
       $set: { 'signatures.bound': true, 'escrow.fundingTxid': txid },
     });
 
-    this.logger.log(`Origination broadcast — txid: ${txid}`);
+    // MVP: transition to ACTIVE immediately after broadcast
+    // TODO: post-MVP, wait for N on-chain confirmations via indexer
+    await this.loanService.transitionState(loanId, ELoanState.ACTIVE, { txid });
+
+    this.logger.log(`Origination broadcast + activated — loan ${loanId} txid: ${txid}`);
     this.eventEmitter.emit(EVENT.LOAN_ORIGINATION_SIGNED, { loanId, party: 'bound', txid });
 
     return txid;

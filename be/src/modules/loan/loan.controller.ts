@@ -59,7 +59,16 @@ export class LoanController extends GeneralController {
       psbtHex = await this.loanSigningService.buildAndStoreOriginationPsbt(loanId);
     }
 
-    return this.response({ data: { loanId, psbtHex } });
+    return this.response({
+      data: {
+        loanId,
+        psbtHex,
+        lenderInputCount: (loan as any).psbt?.lenderInputCount ?? 0,
+        borrowerInputCount: (loan as any).psbt?.borrowerInputCount ?? 0,
+        lenderSigned: !!loan.signatures?.lender,
+        borrowerSigned: !!loan.signatures?.borrower,
+      },
+    });
   }
 
   @Post(':id/psbt/origination/sign')

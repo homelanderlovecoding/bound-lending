@@ -8,6 +8,7 @@ interface MyLoanCardProps {
   loan: Loan;
   btcPrice: number;
   onRepay?: (loanId: string) => void;
+  onSign?: (loanId: string) => void;
 }
 
 function statusBadge(state: string) {
@@ -50,7 +51,7 @@ function formatTermDates(loan: Loan): string {
   return `${start} → ${end}`;
 }
 
-export default function MyLoanCard({ loan, btcPrice, onRepay }: MyLoanCardProps) {
+export default function MyLoanCard({ loan, btcPrice, onRepay, onSign }: MyLoanCardProps) {
   const ltv = calculateLtv(loan.terms.principalUsd, loan.terms.collateralBtc, btcPrice);
   const liqPrice = estLiquidationPrice(loan.terms.totalDebt, loan.terms.collateralBtc);
   const expired = isExpired(loan.terms.termExpiresAt);
@@ -71,6 +72,14 @@ export default function MyLoanCard({ loan, btcPrice, onRepay }: MyLoanCardProps)
             <span className="text-[12px] font-medium text-[var(--gold)]">{remaining}</span>
           )}
         </div>
+        {onSign && loan.state === 'origination_pending' && (
+          <button
+            onClick={() => onSign(loan._id)}
+            className="px-5 py-2 rounded-full text-[13px] font-semibold border-0 cursor-pointer bg-[var(--gold-dark)] text-[var(--parchment)] hover:bg-[var(--gold-light)]"
+          >
+            Sign & Activate
+          </button>
+        )}
         {onRepay && (loan.state === 'active' || loan.state === 'grace') && (
           <button
             onClick={() => onRepay(loan._id)}

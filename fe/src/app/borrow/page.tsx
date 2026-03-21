@@ -12,8 +12,8 @@ import ActiveLoansTable from '@/components/ActiveLoansTable';
 import { calculateLtv, formatNumber, ltvColor, estLiquidationPrice } from '@/lib/utils';
 import { useBtcPrice, useLendingConfig, useRfq, useMyLoans, useAllActiveLoans } from '@/lib/hooks';
 import { rfq as rfqApi, loans as loansApi } from '@/lib/api';
-import { useAuth } from '@/lib/auth-context';
 import { signPsbt } from '@/lib/psbt';
+import { useAuth } from '@/lib/auth-context';
 import MyLoanCard from '@/components/MyLoanCard';
 import LendPanel from '@/components/LendPanel';
 import BorrowPanel from '@/components/BorrowPanel';
@@ -46,7 +46,7 @@ export default function BorrowPage() {
   const { data: priceData, isLoading: priceLoading } = useBtcPrice();
   const { data: lendingConfig, isLoading: configLoading } = useLendingConfig();
   const { data: rfqDetail } = useRfq(rfqId);
-  const { data: myLoans } = useMyLoans('borrower', wallet?.address);
+  const { data: myLoans, mutate: mutateMyLoans } = useMyLoans('borrower', wallet?.address);
   const { data: allActiveLoans } = useAllActiveLoans();
 
   const btcPrice = priceData?.price ?? 0;
@@ -286,7 +286,37 @@ export default function BorrowPage() {
                       key={loan._id}
                       loan={loan}
                       btcPrice={btcPrice}
-                      onRepay={(id) => setError('Wallet signing not yet connected — coming soon')}
+                      onRepay={async (id) => {
+                        if (!wallet) { setError('Connect wallet first'); return; }
+                        try {
+                          setError('');
+                          const psbtData = await loansApi.getRepayPsbt(id);
+                          if (!psbtData?.psbtHex) { setError('Failed to get repayment PSBT'); return; }
+                          const signed = await signPsbt(wallet.type, psbtData.psbtHex);
+                          await loansApi.signRepayment(id, signed);
+                          mutateMyLoans();
+                        } catch (err: any) {
+                          setError(err.message || 'Repayment failed');
+                        }
+                      }}
+                      onSign={async (id) => {
+                        if (!wallet) { setError('Connect wallet first'); return; }
+                        try {
+                          setError('');
+                          const psbtData = await loansApi.getOriginationPsbt(id);
+                          if (!psbtData?.psbtHex) { setError('No origination PSBT found'); return; }
+                          const lenderCount = psbtData.lenderInputCount ?? 0;
+                          const borrowerCount = psbtData.borrowerInputCount ?? 0;
+                          const borrowerIndices = Array.from({ length: borrowerCount }, (_, i) => lenderCount + i);
+                          const signed = await signPsbt(wallet.type, psbtData.psbtHex, {
+                            inputsToSign: borrowerIndices.length > 0 ? borrowerIndices : undefined,
+                          });
+                          await loansApi.signOrigination(id, signed);
+                          mutateMyLoans();
+                        } catch (err: any) {
+                          setError(err.message || 'Signing failed');
+                        }
+                      }}
                     />
                   ))}
                 </div>

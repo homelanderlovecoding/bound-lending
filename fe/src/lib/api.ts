@@ -94,8 +94,12 @@ export const loans = {
   get: (id: string) => request<import('./types').Loan>(`/loans/${id}`),
   repaymentQuote: (id: string) =>
     request<import('./types').RepaymentQuote>(`/loans/${id}/repayment-quote`),
+  getOriginationPsbt: (id: string) =>
+    request<{ loanId: string; psbtHex: string; lenderInputCount: number; borrowerInputCount: number; lenderSigned: boolean; borrowerSigned: boolean }>(`/loans/${id}/psbt/origination`),
+  getRepayPsbt: (id: string) =>
+    request<{ psbtHex: string }>(`/loans/${id}/psbt/repay`),
   signOrigination: (id: string, signedPsbtHex: string) =>
-    request(`/loans/${id}/psbt/origination/sign`, {
+    request<{ complete: boolean; txid?: string }>(`/loans/${id}/psbt/origination/sign`, {
       method: 'POST',
       body: JSON.stringify({ signedPsbtHex }),
     }),

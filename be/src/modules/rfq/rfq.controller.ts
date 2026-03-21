@@ -154,6 +154,20 @@ export class RfqController extends GeneralController {
       btcPrice,
     });
 
+    // 6. If lender already signed a PSBT at offer time, carry it to the loan
+    const offerPsbt = (acceptedOffer as any).offerPsbt;
+    const lockedUtxos = (acceptedOffer as any).lockedUtxos;
+    if (offerPsbt) {
+      await this.loanService.findByIdAndUpdate(loan._id.toString(), {
+        $set: {
+          originationPsbt: offerPsbt,
+          'signatures.lender': true,
+          'psbt.lenderSigned': offerPsbt,
+          'psbt.lenderInputCount': lockedUtxos?.length ?? 0,
+        },
+      });
+    }
+
     return this.response({ data: { rfq, loan, loanId: loan._id.toString() } });
   }
 
