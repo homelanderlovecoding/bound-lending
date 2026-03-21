@@ -241,7 +241,7 @@ describe('RfqService', () => {
 
     beforeEach(() => {
       jest.spyOn(service, 'findByIdOrThrow').mockResolvedValue(rfqWithOffer as any);
-      jest.spyOn(service, 'findByIdAndUpdate').mockResolvedValue({
+      jest.spyOn(service, 'findOneAndUpdate').mockResolvedValue({
         ...rfqWithOffer,
         status: ERfqStatus.SELECTED,
       } as any);

@@ -227,13 +227,17 @@ export class RfqService extends BaseService<RfqEntity> {
     this.validateRfqAcceptsOffers(rfq);
     this.validateOfferExists(rfq, offerId);
 
-    const updated = await this.findByIdAndUpdate(rfqId, {
-      $set: {
-        status: ERfqStatus.SELECTED,
-        selectedOffer: new Types.ObjectId(offerId),
-        'offers.$[elem].status': ERfqOfferStatus.ACCEPTED,
+    const updated = await this.findOneAndUpdate(
+      { _id: rfqId },
+      {
+        $set: {
+          status: ERfqStatus.SELECTED,
+          selectedOffer: new Types.ObjectId(offerId),
+          'offers.$[elem].status': ERfqOfferStatus.ACCEPTED,
+        },
       },
-    });
+      { arrayFilters: [{ 'elem._id': new Types.ObjectId(offerId) }] } as any,
+    );
 
     this.eventEmitter.emit(EVENT.RFQ_ACCEPTED, { rfqId, offerId });
     return updated!;
